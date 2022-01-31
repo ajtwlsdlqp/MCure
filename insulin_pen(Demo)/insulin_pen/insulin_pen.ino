@@ -1,73 +1,26 @@
 #include "SPI.h"
 #include "Adafruit_GFX.h"
 #include "Adafruit_SSD1331.h"
+#include "max6675.h"
 
-// Define OLED PIN I/O
-#define MOSI   51
-#define CLK    52
+#include "myDef.h"
+#include "myFuncDef.h"
 
-#define DC1    36
-#define CS1    37
-#define RST1   35
-
-#define DC2    32
-#define CS2    33
-#define RST2   31
-
-#define DC3    28
-#define CS3    29
-#define RST3   27
-
-// Color definitions
-#define  BLACK           0x0000
-#define BLUE            0x001F
-#define RED             0xF800
-#define GREEN           0x07E0
-#define CYAN            0x07FF
-#define MAGENTA         0xF81F
-#define YELLOW          0xFFE0
-#define WHITE           0xFFFF
-/*
-Adafruit_SSD1331 dsp_1 = Adafruit_SSD1331(CS1, DC1, MOSI, CLK, RST1);
-Adafruit_SSD1331 dsp_2 = Adafruit_SSD1331(CS2, DC2, MOSI, CLK, RST2);
-Adafruit_SSD1331 dsp_3 = Adafruit_SSD1331(CS3, DC3, MOSI, CLK, RST3);
-*/
 Adafruit_SSD1331 dsp_1(&SPI, CS1, DC1, RST1);
 Adafruit_SSD1331 dsp_2(&SPI, CS2, DC2, RST2);
 Adafruit_SSD1331 dsp_3(&SPI, CS3, DC3, RST3);
 
-// Analog Key Data
-#define KeySet1 A1
-#define KetSet2 A2
-
 int KeyA = 0xFF;
 int KeyB = 0xFF;
-
 unsigned long pre_key_A_readtime = millis();
 unsigned long pre_key_B_readtime = millis();
 bool is_key_A_change = false;
 bool is_key_B_change = false;
-#define TEMP_UP     0x01
-#define TEMP_DN     0x02
 
-#define MOTOR_CW    0x04
-#define MOTOR_CCW   0x08
-#define MOTOR_SEL   0x10
-#define MOTOR_WORK  0x0C
+signed int real_temp, hope_temp;
+MAX6675 thermocouple(TEMP_CLK, TEMP_CS, TEMP_DO);
+unsigned long pre_temp_readtime = millis();
 
-#define PSI_UP      0x20
-#define PSI_DN      0x40
-#define PSI_SEL     0x80
-#define PSI_WORK    0x60
-
-
-void Key_Read_A(void);
-void Key_Scan_A(void);
-void Key_Proc_A(void);
-
-void Key_Read_B(void);
-void Key_Scan_B(void);
-void Key_Proc_B(void);
 void setup() 
 {
   // put your setup code here, to run once:
@@ -82,10 +35,23 @@ void setup()
   delay(50);
 
   dsp_1.fillScreen(RED);
-  dsp_1.setCursor(0,0);
-  dsp_1.setTextColor(WHITE);
-  dsp_1.setTextSize(1);
-  dsp_1.print("Disp_1 Work");
+  dsp_1.setCursor(5,0);
+  dsp_1.print("temp display");
+  
+  dsp_1.setCursor(5,10);
+  dsp_1.print("target : ");
+  dsp_1.setCursor(60,10);
+  dsp_1.print(hope_temp);
+  
+  dsp_1.setCursor(5,20);
+  dsp_1.print("read temp : ");
+  dsp_1.setCursor(80,20);
+  dsp_1.print(real_temp);
+
+  dsp_1.setCursor(5,30);
+  dsp_1.print("FAN state : ");
+  dsp_1.setCursor(80,30);
+  dsp_1.print("OF");
 
   delay(50);
   
@@ -119,6 +85,8 @@ void loop()
 
   Key_Scan_B();
   Key_Proc_B();
+
+  updateTemperatrue();
 }
 
 
@@ -175,23 +143,48 @@ void Key_Scan_A(void)   //10ms
 
 void Key_Proc_A(void)
 { 
+  static bool is_update_up = false;
+  static bool is_update_dn = false;
   if(is_key_A_change == false) return;
   is_key_A_change = false;
   switch(KeyA)
   {
-    case TEMP_UP  : Serial.println("TEMP_UP");   
-      dsp_1.fillScreen(RED);
-      dsp_1.setCursor(0,0);
-      dsp_1.setTextColor(WHITE);
-      dsp_1.setTextSize(1);
-      dsp_1.print("temp up");
+    case TEMP_UP  : Serial.println("TEMP_UP");
+      hope_temp += 1;
+      is_update_dn = false;
+      if( is_update_up == false)
+      {
+        is_update_up = true;
+        dsp_1.fillRect(5-2,0,80,10, RED);
+        dsp_1.setCursor(5,0);
+        dsp_1.print("temp up !");
+      }
+
+      dsp_1.fillRect(60-2,10,20,10, RED);
+      dsp_1.setCursor(5,10);
+      dsp_1.print("target : ");
+      dsp_1.setCursor(60,10);
+      dsp_1.print(hope_temp);
+  
     break;
+    
     case TEMP_DN  : Serial.println("TEMP_Dn");
-      dsp_1.fillScreen(RED);
-      dsp_1.setCursor(0,0);
-      dsp_1.setTextColor(WHITE);
-      dsp_1.setTextSize(1);
-      dsp_1.print("temp dn");
+      hope_temp -= 1;
+      is_update_up = false;
+      if(is_update_dn == false)
+      {
+        is_update_dn = true;
+        dsp_1.fillRect(5-2,0,80,10, RED);
+        dsp_1.setCursor(5,0);
+        dsp_1.print("temp down !");
+       }
+      
+      dsp_1.fillRect(60-2,10,20,10, RED);
+      dsp_1.setCursor(5,10);
+      dsp_1.print("target : ");
+      dsp_1.setCursor(60,10);
+      dsp_1.print(hope_temp);
+  
     break;
     
     case MOTOR_CW : Serial.println("MOTOR_CW");
@@ -322,6 +315,43 @@ void Key_Proc_B(void)
     break;
     
     default : break;
+  }
+}
+
+void updateTemperatrue (void)
+{
+  if( millis() - pre_temp_readtime < 200) return;
+  pre_temp_readtime = millis();
+  
+  // update need atleast 200ms
+  real_temp = thermocouple.readCelsius();
+
+  dsp_1.fillRect(78,18,14,14, RED);
+  dsp_1.setCursor(80,20);
+  dsp_1.print(real_temp);
+
+  dsp_1.fillRect(78,28,14,14, RED);
+  dsp_1.setCursor(80,30);
+  if( real_temp <= hope_temp+2 && real_temp >= hope_temp-2)
+  {
+    digitalWrite(PTR_PORT_A, LOW);
+    digitalWrite(PTR_PORT_B, LOW);
+    digitalWrite(PTR_PORT_FAN, LOW);
+    dsp_1.print("OF");
+  }
+  else if( real_temp > hope_temp) // Need Cooling
+  {
+    digitalWrite(PTR_PORT_A, LOW);
+    digitalWrite(PTR_PORT_B, HIGH);
+    digitalWrite(PTR_PORT_FAN, HIGH);
+    dsp_1.print("ON");
+  }
+  else if( real_temp < hope_temp)
+  {
+    digitalWrite(PTR_PORT_A, HIGH);
+    digitalWrite(PTR_PORT_B, LOW);
+    digitalWrite(PTR_PORT_FAN, HIGH);
+    dsp_1.print("ON");
   }
 
 }
