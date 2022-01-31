@@ -2,6 +2,7 @@
 #include "Adafruit_GFX.h"
 #include "Adafruit_SSD1331.h"
 #include "max6675.h"
+#include "EEPROM.h"
 
 #include "myDef.h"
 #include "myFuncDef.h"
@@ -17,9 +18,20 @@ unsigned long pre_key_B_readtime = millis();
 bool is_key_A_change = false;
 bool is_key_B_change = false;
 
-signed int real_temp, hope_temp;
+signed int real_temp = 20, hope_temp = 0;
 MAX6675 thermocouple(TEMP_CLK, TEMP_CS, TEMP_DO);
 unsigned long pre_temp_readtime = millis();
+
+signed int real_psi = 0, hope_psi = 0;
+unsigned long pre_psi_readtime = millis();
+bool is_pump_working = false;
+bool is_pump_emergency = false;
+
+unsigned long pre_eeprom_time = millis();
+bool is_update_infor;
+
+signed int cw_pos = 0, ccw_pos = 0;
+bool is_select_opsit = false;
 
 void setup() 
 {
@@ -29,10 +41,12 @@ void setup()
   Serial.println("Use Command cli (N)");
 
   Serial.println("OLED Test Start");
-  delay(50);
+  delay(5);
+
+  readEEPROM();
 
   dsp_1.begin();
-  delay(50);
+  delay(5);
 
   dsp_1.fillScreen(RED);
   dsp_1.setCursor(5,0);
@@ -53,28 +67,52 @@ void setup()
   dsp_1.setCursor(80,30);
   dsp_1.print("OF");
 
-  delay(50);
+  delay(5);
   
   dsp_2.begin();
-  delay(50);
+  delay(5);
   dsp_2.fillScreen(GREEN);
-  dsp_2.setCursor(0,0);
-  dsp_2.setTextColor(WHITE);
-  dsp_2.setTextSize(1);
-  dsp_2.print("Disp_2 Work");
-  delay(50);
+  dsp_2.setCursor(5,0);
+  dsp_2.print("motor display");
+
+  dsp_2.setCursor(5,10);
+  dsp_2.print(" cw pos :");
+  dsp_2.setCursor(60,10);
+  dsp_2.print(cw_pos);
+  
+  dsp_2.setCursor(5,20);
+  dsp_2.print("ccw pos : ");
+  dsp_2.setCursor(60,20);
+  dsp_2.print(ccw_pos);
+  
+  dsp_2.setCursor(5,30);
+  dsp_2.print("state : ");
+  dsp_2.setCursor(50, 30);
+  dsp_2.print("up");
+  
+  delay(5);
   
   dsp_3.begin();
-  delay(50);
+  delay(5);
   dsp_3.fillScreen(BLUE);
-  dsp_3.setTextColor(WHITE);
-  dsp_3.setTextSize(1);
-  dsp_3.print("Disp_3 Work");
-  delay(50);
+  dsp_3.setCursor(5,0);
+  dsp_3.print("PSI display");
+    
+  dsp_3.setCursor(5,10);
+  dsp_3.print("target : ");
+  dsp_3.setCursor(60,10);
+  dsp_3.print(hope_psi);
+  
+  dsp_3.setCursor(5,20);
+  dsp_3.print("read psi : ");
+  dsp_3.setCursor(80,20);
+  dsp_3.print(real_psi);
+
+  dsp_3.fillRect(0,28,10,10, BLUE);
+  delay(5);
   
   Serial.println("OLED Test end");
-  delay(50);
-
+  delay(5);
 }
 
 void loop() 
@@ -87,6 +125,9 @@ void loop()
   Key_Proc_B();
 
   updateTemperatrue();
+  updatePSI();
+
+  updateEEPROM();
 }
 
 
@@ -109,7 +150,7 @@ void Key_Scan_A(void)   //10ms
   static unsigned char f_PressedKeyA = 0;
   static unsigned char PrevKeyA = 0xFF;
 
-  if( millis() - pre_key_A_readtime < 100) return;
+  if( millis() - pre_key_A_readtime < 50) return;
   pre_key_A_readtime = millis();
 
   Key_Read_A();             // update Key value
@@ -143,18 +184,19 @@ void Key_Scan_A(void)   //10ms
 
 void Key_Proc_A(void)
 { 
-  static bool is_update_up = false;
-  static bool is_update_dn = false;
+  static unsigned char update_title1 = 0x00;
+  static unsigned char update_title2 = 0x00;
+  
   if(is_key_A_change == false) return;
   is_key_A_change = false;
   switch(KeyA)
   {
     case TEMP_UP  : Serial.println("TEMP_UP");
       hope_temp += 1;
-      is_update_dn = false;
-      if( is_update_up == false)
+      
+      if( update_title1 != 1)
       {
-        is_update_up = true;
+        update_title1 = 1;
         dsp_1.fillRect(5-2,0,80,10, RED);
         dsp_1.setCursor(5,0);
         dsp_1.print("temp up !");
@@ -165,15 +207,17 @@ void Key_Proc_A(void)
       dsp_1.print("target : ");
       dsp_1.setCursor(60,10);
       dsp_1.print(hope_temp);
-  
+
+      is_update_infor = true;
+      pre_eeprom_time = millis();
     break;
     
     case TEMP_DN  : Serial.println("TEMP_Dn");
       hope_temp -= 1;
-      is_update_up = false;
-      if(is_update_dn == false)
+
+      if(update_title1 != 2)
       {
-        is_update_dn = true;
+        update_title1 = 2;
         dsp_1.fillRect(5-2,0,80,10, RED);
         dsp_1.setCursor(5,0);
         dsp_1.print("temp down !");
@@ -184,31 +228,69 @@ void Key_Proc_A(void)
       dsp_1.print("target : ");
       dsp_1.setCursor(60,10);
       dsp_1.print(hope_temp);
-  
+      
+      is_update_infor = true;
+      pre_eeprom_time = millis();
     break;
-    
+    // signed int cw_pos = 0; ccw_pos = 0;
     case MOTOR_CW : Serial.println("MOTOR_CW");
-      dsp_2.fillScreen(GREEN);
-      dsp_2.setCursor(0,0);
-      dsp_2.setTextColor(WHITE);
-      dsp_2.setTextSize(1);
-      dsp_2.print("motor cw");
+      if( is_select_opsit == false) cw_pos += 10;
+      else cw_pos -= 10;
+
+      if(update_title2 != 1)
+      {
+        update_title2 = 1;
+        dsp_2.fillRect(5-2,0,100,10, GREEN);
+        dsp_2.setCursor(5,0);
+        dsp_2.print("cw pos control");
+       }
+      
+      dsp_2.fillRect(60-2,10,80,10, GREEN);
+      dsp_2.setCursor(60,10);
+      dsp_2.print(cw_pos);
+      
+      is_update_infor = true;
+      pre_eeprom_time = millis();
     break;
     
     case MOTOR_CCW: Serial.println("MOTOR_CCW");
-      dsp_2.fillScreen(GREEN);
-      dsp_2.setCursor(0,0);
-      dsp_2.setTextColor(WHITE);
-      dsp_2.setTextSize(1);
-      dsp_2.print("motor ccw");
+      if( is_select_opsit == false) ccw_pos += 10;
+      else ccw_pos -= 10;
+      
+      if(update_title2 != 2)
+      {
+        update_title2 = 2;
+        dsp_2.fillRect(5-2,0,100,10, GREEN);
+        dsp_2.setCursor(5,0);
+        dsp_2.print("ccw pos control");
+       }
+      
+      dsp_2.fillRect(60-2,20,80,10, GREEN);
+      dsp_2.setCursor(60,20);
+      dsp_2.print(ccw_pos);
+
+      is_update_infor = true;
+      pre_eeprom_time = millis();
     break;
     
     case MOTOR_SEL: Serial.println("MOTOR_SEL");
-      dsp_2.fillScreen(GREEN);
-      dsp_2.setCursor(0,0);
-      dsp_2.setTextColor(WHITE);
-      dsp_2.setTextSize(1);
-      dsp_2.print("motor sel");
+      is_select_opsit = !is_select_opsit;
+      if(update_title2 != 3)
+      {
+        update_title2 = 3;
+        dsp_2.fillRect(5-2,0,100,10, GREEN);
+        dsp_2.setCursor(5,0);
+        dsp_2.print("select control");
+       }
+    
+      dsp_2.setCursor(5,30);
+      dsp_2.print("state : ");
+      dsp_2.setCursor(5,30);
+      
+      dsp_2.setCursor(50, 30);
+      dsp_2.fillRect(50, 30, 40, 10, GREEN);
+      if( is_select_opsit == false) dsp_2.print("up");
+      else dsp_2.print("down");
     break;
 
     default : break;
@@ -223,7 +305,7 @@ void Key_Read_B(void)
   if( data2 > 937 ){ KeyB = 0xFF; }
   else if(data2 > 819){ KeyB = PSI_UP; }
   else if(data2 > 694){ KeyB = PSI_DN; }
-  else if(data2 > 558){ KeyB = PSI_SEL; }
+  else if(data2 > 558){ KeyB = PSI_STOP; }
   else if(data2 > 388){ KeyB = PSI_WORK; }
   else if(data2 > 146) { KeyB = MOTOR_WORK; }
   else { KeyB = 0xFF; }
@@ -235,7 +317,7 @@ void Key_Scan_B(void)   //10ms
   static unsigned char f_PressedKeyB = 0;
   static unsigned char PrevKeyB = 0xFF;
   
-  if( millis() - pre_key_B_readtime < 100) return;
+  if( millis() - pre_key_B_readtime < 50) return;
   pre_key_B_readtime = millis();
 
   Key_Read_B();             // update Key value
@@ -269,6 +351,11 @@ void Key_Scan_B(void)   //10ms
 
 void Key_Proc_B(void)
 { 
+  static bool is_update_up = false;
+  static bool is_update_dn = false;
+  static bool is_update_stop = false;
+  static bool is_update_work = false;
+  
   if(is_key_B_change == false) return;
   is_key_B_change = false;
 
@@ -283,35 +370,80 @@ void Key_Proc_B(void)
     break;
     
     case PSI_UP  : Serial.println("PSI_UP");
-      dsp_3.fillScreen(BLUE);
-      dsp_3.setCursor(0,0);
-      dsp_3.setTextColor(WHITE);
-      dsp_3.setTextSize(1);
-      dsp_3.print("psi up");
+      hope_psi += 1;
+      is_update_dn = false;
+      is_update_stop = false;
+      is_update_work = false;
+      if( is_update_up == false)
+      {
+        is_update_up = true;
+        dsp_3.fillRect(5-2,0,80,10, BLUE);
+        dsp_3.setCursor(5,0);
+        dsp_3.print("psi up !");
+      }
+
+      dsp_3.fillRect(60-2,10,30,10, BLUE);
+      dsp_3.setCursor(5,10);
+      dsp_3.print("target : ");
+      dsp_3.setCursor(60,10);
+      dsp_3.print(hope_psi);
+      
+      is_update_infor = true;
+      pre_eeprom_time = millis();
     break;
     
     case PSI_DN : Serial.println("PSI_DN");
-      dsp_3.fillScreen(BLUE);
-      dsp_3.setCursor(0,0);
-      dsp_3.setTextColor(WHITE);
-      dsp_3.setTextSize(1);
-      dsp_3.print("psi dn");
+      hope_psi -= 1;
+      is_update_up = false;
+      is_update_stop = false;
+      is_update_work = false;
+      if( is_update_up == false)
+      {
+        is_update_up = true;
+        dsp_3.fillRect(5-2,0,80,10, BLUE);
+        dsp_3.setCursor(5,0);
+        dsp_3.print("psi down !");
+      }
+
+      dsp_3.fillRect(60-2,10,30,10, BLUE);
+      dsp_3.setCursor(5,10);
+      dsp_3.print("target : ");
+      dsp_3.setCursor(60,10);
+      dsp_3.print(hope_psi);
+      
+      is_update_infor = true;
+      pre_eeprom_time = millis();
     break;
     
-    case PSI_SEL: Serial.println("PSI_SEL");
-      dsp_3.fillScreen(BLUE);
-      dsp_3.setCursor(0,0);
-      dsp_3.setTextColor(WHITE);
-      dsp_3.setTextSize(1);
-      dsp_3.print("psi sel");
+    case PSI_STOP: Serial.println("PSI_STOP");
+      is_update_up = false;
+      is_update_up = false;
+      is_update_work = false;
+      if( is_update_stop == false)
+      {
+        is_update_stop = true;
+        dsp_3.fillRect(5-2,0,80,10, BLUE);
+        dsp_3.setCursor(5,0);
+        dsp_3.print("! stop !");
+      }
+      is_pump_working = false;
+      is_pump_emergency = true;
+      digitalWrite(PUMP_PORT, LOW);
     break;
     
     case PSI_WORK: Serial.println("PSI_WORK");
-      dsp_3.fillScreen(BLUE);
-      dsp_3.setCursor(0,0);
-      dsp_3.setTextColor(WHITE);
-      dsp_3.setTextSize(1);
-      dsp_3.print("psi work");
+      is_update_up = false;
+      is_update_up = false;
+      is_update_stop = false;
+      if( is_update_work == false)
+      {
+        is_update_work = true;
+        dsp_3.fillRect(5-2,0,80,10, BLUE);
+        dsp_3.setCursor(5,0);
+        dsp_3.print("puum on !");
+      }
+      is_pump_working = true;
+      is_pump_emergency = false;
     break;
     
     default : break;
@@ -354,4 +486,84 @@ void updateTemperatrue (void)
     dsp_1.print("ON");
   }
 
+}
+
+void updatePSI (void)
+{
+  if( millis() - pre_psi_readtime < 100) return;
+  pre_psi_readtime = millis();
+
+  real_psi = analogRead(A8);
+  dsp_3.fillRect(68,18,40,14, BLUE);
+  dsp_3.setCursor(70,20);
+  dsp_3.print(real_psi);
+
+  if( is_pump_working == true)
+  {
+    if(real_psi < hope_psi) digitalWrite(PUMP_PORT, HIGH);  // active pump
+    else if( real_psi >= hope_psi) digitalWrite(PUMP_PORT, LOW);  // de-active pump
+  }
+
+  if( is_pump_emergency == true)
+  {
+    digitalWrite(SOLENOID, HIGH);
+    if( real_psi < 110)
+    {
+      digitalWrite(SOLENOID, LOW);
+      is_pump_emergency = false;
+    }
+  }
+}
+
+void readEEPROM (void)
+{
+  int addr = 0x00;
+  signed int data[6];
+    
+  for (int i = 0; i<6; i++)
+  {
+    data[i] = EEPROM.read(addr);
+    Serial.print(addr);
+    Serial.print(" : ");
+    Serial.println(data[i]);
+    addr += sizeof(signed int);
+    delay(1);
+  }
+  real_temp = data[0];
+  hope_temp = data[1];
+  cw_pos = data[2];
+  ccw_pos = (signed int)data[3];
+  real_psi = data[4];
+  hope_psi = data[5];
+  
+}
+
+void updateEEPROM (void)
+{
+  if( is_update_infor == false) return;
+  if( millis() - pre_eeprom_time < 1000) return;
+
+  is_update_infor = false;
+
+  for (int i = 0 ; i < 50; i++) 
+  {
+    EEPROM.write(i, 0);
+    delay(1);
+  }
+
+  int addr = 0x00;
+  signed int data[6];
+  data[0] = real_temp;
+  data[1] = hope_temp;
+  data[2] = cw_pos;
+  data[3] = ccw_pos;
+  data[4] = real_psi;
+  data[5] = hope_psi;
+  
+  for (int i = 0; i<6; i++)
+  {
+    EEPROM.write(addr, data[i]);
+    addr += sizeof(signed int);
+    delay(1);
+  }
 }

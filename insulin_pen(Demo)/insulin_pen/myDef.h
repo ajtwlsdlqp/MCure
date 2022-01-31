@@ -33,7 +33,7 @@
 
 #define PSI_UP      0x20
 #define PSI_DN      0x40
-#define PSI_SEL     0x80
+#define PSI_STOP     0x80
 #define PSI_WORK    0x60
 
 // Define Key Read
@@ -49,8 +49,15 @@
 #define PTR_PORT_A    48
 #define PTR_PORT_B    47
 #define PTR_PORT_FAN  46
+
 // Define OLED
+#define PUMP_PORT     41
+#define SOLENOID      40
+
 // Define OLED
+
+
 // Define OLED
+
 // Define OLED
 // Define OLED
