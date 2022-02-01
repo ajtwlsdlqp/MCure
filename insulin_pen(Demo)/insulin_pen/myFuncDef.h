@@ -13,5 +13,6 @@ void updatePSI (void);
 void readEEPROM (void);
 void updateEEPROM (void);
 
+void updateMotor(void);
 void updateMotorStopPos(void);
 void A_CHANGE();  //Interrupt function to read the x2 pulses of the encoder.

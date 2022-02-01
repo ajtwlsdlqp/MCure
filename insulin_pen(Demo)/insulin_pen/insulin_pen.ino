@@ -31,20 +31,18 @@ unsigned long pre_eeprom_time = millis();
 bool is_update_infor;
 
 unsigned long pre_encodercheck_time = millis();
+unsigned long pre_motor_stop_time = millis();
 bool is_encoder_working = false;
-signed int cw_pos = 0, ccw_pos = 0;
 signed int pulses = 0;
-bool is_select_opsit = false;
+unsigned int pulses_stop_pos = 16000;
+unsigned char motor_stop_time = 1;
+unsigned char motor_mode_num = 0xFF;
+
 
 void setup() 
 {
   // put your setup code here, to run once:
   Serial.begin(115200);
-  Serial.println("M-Cure Demo Board Start");
-  Serial.println("Use Command cli (N)");
-
-  Serial.println("OLED Test Start");
-  delay(5);
 
   readEEPROM();
 
@@ -79,19 +77,21 @@ void setup()
   dsp_2.print("motor display");
 
   dsp_2.setCursor(5,10);
-  dsp_2.print(" cw pos :");
+  dsp_2.print("now pos :");
   dsp_2.setCursor(60,10);
-  dsp_2.print(cw_pos);
+  dsp_2.print(pulses);
   
   dsp_2.setCursor(5,20);
-  dsp_2.print("ccw pos : ");
+  dsp_2.print("target : ");
   dsp_2.setCursor(60,20);
-  dsp_2.print(ccw_pos);
+  dsp_2.print(pulses_stop_pos);
   
   dsp_2.setCursor(5,30);
-  dsp_2.print("state : ");
+  dsp_2.print("time  : ");
   dsp_2.setCursor(50, 30);
-  dsp_2.print("up");
+  dsp_2.print(motor_stop_time);
+  dsp_2.setCursor(65, 30);
+  dsp_2.print("S");
   
   delay(5);
   
@@ -113,13 +113,27 @@ void setup()
 
   dsp_3.fillRect(0,28,10,10, BLUE);
   delay(5);
-  
-  Serial.println("OLED Test end");
-  delay(5);
 
   pinMode(ENCODER_A, INPUT);
   pinMode(ENCODER_B, INPUT);
   attachInterrupt(0, A_CHANGE, CHANGE);
+
+  // temp control
+  digitalWrite(PTR_PORT_A, LOW);
+  digitalWrite(PTR_PORT_B, LOW);
+  digitalWrite(PTR_PORT_FAN, LOW);
+  // Define PSI
+  digitalWrite(PUMP_PORT, LOW);
+  digitalWrite(SOLENOID, LOW);
+  // Define ENCODER Motor
+  digitalWrite(MOTOR_PORT_A, LOW);
+  digitalWrite(MOTOR_PORT_B, LOW);
+  
+  pulses = 0;
+  motor_mode_num = 0xFF;
+  digitalWrite(MOTOR_PORT_A, LOW);
+  digitalWrite(MOTOR_PORT_B, HIGH);    
+  pre_encodercheck_time = millis();
 }
 
 void loop() 
@@ -133,9 +147,15 @@ void loop()
 
   updateTemperatrue();
   updatePSI();
+  
+  updateMotor();
   updateMotorStopPos();
   
   updateEEPROM();
+
+  dsp_2.fillRect(60-2,10,80,10, GREEN);
+  dsp_2.setCursor(60,10);
+  dsp_2.print(pulses);
 }
 
 void A_CHANGE() 
@@ -144,26 +164,25 @@ void A_CHANGE()
   {
     if ( digitalRead(ENCODER_A) == 0 )
     {
-      pulses--; // Moving forward
+      pulses++; // Moving forward
     }
     else
     {
-      pulses++; // Moving reverse
+      pulses--; // Moving reverse
     }
   } 
   else 
   {
     if ( digitalRead(ENCODER_A) == 0 )
     {
-      pulses++; // Moving reverse
+      pulses--; // Moving reverse
     }
     else
     {
-      pulses--; // Moving forward
+      pulses++; // Moving forward
     }
   }
   pre_encodercheck_time = millis();
-  is_encoder_working = true;
 }
 
 
@@ -174,9 +193,9 @@ void Key_Read_A(void)
   if( data1 > 937 ){ KeyA = 0xFF; }
   else if(data1 > 819){ KeyA = TEMP_UP; }
   else if(data1 > 694){ KeyA = TEMP_DN; }
-  else if(data1 > 558){ KeyA = MOTOR_CW; }
-  else if(data1 > 388){ KeyA = MOTOR_SEL; }
-  else if(data1 > 146) { KeyA = MOTOR_CCW; }
+  else if(data1 > 558){ KeyA = MOTOR_MANUAL; }
+  else if(data1 > 388){ KeyA = MOTOR_TIME; }
+  else if(data1 > 146) { KeyA = MOTOR_SAVE; }
   else { KeyA = 0xFF; }
 }
 
@@ -203,7 +222,7 @@ void Key_Scan_A(void)   //10ms
     {         // Hold - Pressed Key
       if(--AutoKeyCountA==0) 
       {
-        if( KeyA == TEMP_UP || KeyA == TEMP_DN || KeyA == MOTOR_CW || KeyA == MOTOR_CCW  ) 
+        if( KeyA == TEMP_UP || KeyA == TEMP_DN ) 
         {
           is_key_A_change = 1;
           AutoKeyCountA = 3; // about 0.15s
@@ -221,13 +240,12 @@ void Key_Scan_A(void)   //10ms
 void Key_Proc_A(void)
 { 
   static unsigned char update_title1 = 0x00;
-  static unsigned char update_title2 = 0x00;
   
   if(is_key_A_change == false) return;
   is_key_A_change = false;
   switch(KeyA)
   {
-    case TEMP_UP  : Serial.println("TEMP_UP");
+    case TEMP_UP  : //Serial.println("TEMP_UP");
       hope_temp += 1;
       
       if( update_title1 != 1)
@@ -248,7 +266,7 @@ void Key_Proc_A(void)
       pre_eeprom_time = millis();
     break;
     
-    case TEMP_DN  : Serial.println("TEMP_Dn");
+    case TEMP_DN  : //Serial.println("TEMP_Dn");
       hope_temp -= 1;
 
       if(update_title1 != 2)
@@ -268,69 +286,100 @@ void Key_Proc_A(void)
       is_update_infor = true;
       pre_eeprom_time = millis();
     break;
-    // signed int cw_pos = 0; ccw_pos = 0;
-    case MOTOR_CW : Serial.println("MOTOR_CW");
-      if( is_select_opsit == false) cw_pos += 10;
-      else cw_pos -= 10;
-
-      if(update_title2 != 1)
+    
+    case MOTOR_MANUAL : //Serial.println("MOTOR_MANUAL"); // manual control motor stop pos
+      if(motor_mode_num >= 7) break;  // if motor working 1 cycle mode not enterence
+      if(motor_mode_num == 0xFF) break; // if motor goto start pos break;
+      is_encoder_working = false;
+      if(motor_mode_num  == 1)
       {
-        update_title2 = 1;
+        motor_mode_num = 2;
         dsp_2.fillRect(5-2,0,100,10, GREEN);
         dsp_2.setCursor(5,0);
-        dsp_2.print("cw pos control");
+        dsp_2.print("manual move");
 
         digitalWrite(MOTOR_PORT_A, HIGH);
         digitalWrite(MOTOR_PORT_B, LOW);
        }
-      
-      dsp_2.fillRect(60-2,10,80,10, GREEN);
-      dsp_2.setCursor(60,10);
-      dsp_2.print(cw_pos);
-    break;
-    
-    case MOTOR_CCW: Serial.println("MOTOR_CCW");
-      if( is_select_opsit == false) ccw_pos += 10;
-      else ccw_pos -= 10;
-      
-      if(update_title2 != 2)
-      {
-        update_title2 = 2;
+       else if( motor_mode_num == 2)
+       {
+        motor_mode_num = 3;
         dsp_2.fillRect(5-2,0,100,10, GREEN);
         dsp_2.setCursor(5,0);
-        dsp_2.print("ccw pos control");
-
-        
-        digitalWrite(MOTOR_PORT_A, LOW);
-        digitalWrite(MOTOR_PORT_B, HIGH);
-       }
-      
-      dsp_2.fillRect(60-2,20,80,10, GREEN);
-      dsp_2.setCursor(60,20);
-      dsp_2.print(ccw_pos);
-    break;
-    
-    case MOTOR_SEL: Serial.println("MOTOR_SEL");
-      is_select_opsit = !is_select_opsit;
-      if(update_title2 != 3)
-      {
-        update_title2 = 3;
-        dsp_2.fillRect(5-2,0,100,10, GREEN);
-        dsp_2.setCursor(5,0);
-        dsp_2.print("select control");
+        dsp_2.print("manual stop");
 
         digitalWrite(MOTOR_PORT_A, LOW);
         digitalWrite(MOTOR_PORT_B, LOW);
        }
+       else if( motor_mode_num == 3)
+       {
+        motor_mode_num = 4;
+        dsp_2.fillRect(5-2,0,100,10, GREEN);
+        dsp_2.setCursor(5,0);
+        dsp_2.print("manual move");
+
+        digitalWrite(MOTOR_PORT_A, LOW);
+        digitalWrite(MOTOR_PORT_B, HIGH);
+       }
+       else
+       {
+        motor_mode_num = 1;
+        dsp_2.fillRect(5-2,0,100,10, GREEN);
+        dsp_2.setCursor(5,0);
+        dsp_2.print("manual stop");
+
+        digitalWrite(MOTOR_PORT_A, LOW);
+        digitalWrite(MOTOR_PORT_B, LOW);
+       }
+
+        dsp_2.fillRect(60-2,20,50,10, GREEN);
+        dsp_2.setCursor(60,20);
+        dsp_2.print(pulses);
+       
+    break;
     
-      dsp_2.setCursor(5,30);
-      dsp_2.print("state : ");
-      dsp_2.setCursor(5,30);
+    case MOTOR_SAVE: //Serial.println("MOTOR_SAVE"); // set motor stop pos
+      if(motor_mode_num  >= 7) break;
+      if(motor_mode_num == 0xFF) break; // if motor goto start pos break;
       
+      is_encoder_working = false;
+      if(motor_mode_num  != 5)
+      {
+        motor_mode_num  = 5;
+        dsp_2.fillRect(5-2,0,100,10, GREEN);
+        dsp_2.setCursor(5,0);
+        dsp_2.print("stop pos save");
+
+        pulses_stop_pos = pulses;
+        is_update_infor = true;
+        pre_eeprom_time = millis();
+
+        motor_mode_num = 0xFF;
+        digitalWrite(MOTOR_PORT_A, LOW);
+        digitalWrite(MOTOR_PORT_B, HIGH);    
+        pre_encodercheck_time = millis();
+      }
+    break;
+    
+    case MOTOR_TIME: //Serial.println("MOTOR_WORK");  // setting motor stop time
+      if(motor_mode_num >= 7) break;
+      if(motor_mode_num == 0xFF) break; // if motor goto start pos break;
+      
+      is_encoder_working = false;
+      motor_mode_num = 6;
+      dsp_2.fillRect(5-2,0,100,10, GREEN);
+      dsp_2.setCursor(5,0);
+      dsp_2.print("select time");
+
+      if( motor_stop_time > 10) motor_stop_time  = 1;
+      else motor_stop_time += 1;
+
+      dsp_2.fillRect(50-2,30,16,10, GREEN);
       dsp_2.setCursor(50, 30);
-      dsp_2.fillRect(50, 30, 40, 10, GREEN);
-      if( is_select_opsit == false) dsp_2.print("up");
-      else dsp_2.print("down");
+      dsp_2.print(motor_stop_time);
+
+      is_update_infor = true;
+      pre_eeprom_time = millis();
     break;
 
     default : break;
@@ -343,8 +392,8 @@ void Key_Read_B(void)
   int data2 = analogRead(A2);
 
   if( data2 > 937 ){ KeyB = 0xFF; }
-  else if(data2 > 819){ KeyB = PSI_UP; }
-  else if(data2 > 694){ KeyB = PSI_DN; }
+  else if(data2 > 819){ KeyB = PSI_DN; }
+  else if(data2 > 694){ KeyB = PSI_UP; }
   else if(data2 > 558){ KeyB = PSI_STOP; }
   else if(data2 > 388){ KeyB = PSI_WORK; }
   else if(data2 > 146) { KeyB = MOTOR_WORK; }
@@ -391,32 +440,39 @@ void Key_Scan_B(void)   //10ms
 
 void Key_Proc_B(void)
 { 
-  static bool is_update_up = false;
-  static bool is_update_dn = false;
-  static bool is_update_stop = false;
-  static bool is_update_work = false;
+  static unsigned char update_num = 0;
   
   if(is_key_B_change == false) return;
   is_key_B_change = false;
 
   switch(KeyB)
   {
-    case MOTOR_WORK  : Serial.println("MOTOR_WORK");
-      dsp_2.fillScreen(GREEN);
-      dsp_2.setCursor(0,0);
-      dsp_2.setTextColor(WHITE);
-      dsp_2.setTextSize(1);
-      dsp_2.print("motor work");
+    case MOTOR_WORK  : //Serial.println("MOTOR_WORK");  // motor work 1 cycle
+      if(motor_mode_num != 7)
+      {
+        motor_mode_num = 7;
+        dsp_2.fillRect(5-2,0,100,10, GREEN);
+        dsp_2.setCursor(5,0);
+        dsp_2.print("work 1 cycle");
+
+        dsp_2.fillRect(60-2,20,100,10, GREEN);
+        dsp_2.setCursor(60,20);
+        dsp_2.print(pulses_stop_pos);
+
+        pulses = 0;
+        
+        digitalWrite(MOTOR_PORT_A, HIGH);
+        digitalWrite(MOTOR_PORT_B, LOW);
+        pre_encodercheck_time = millis();
+        is_encoder_working = true;
+       }
     break;
     
-    case PSI_UP  : Serial.println("PSI_UP");
+    case PSI_UP  : //Serial.println("PSI_UP");
       hope_psi += 1;
-      is_update_dn = false;
-      is_update_stop = false;
-      is_update_work = false;
-      if( is_update_up == false)
+      if( update_num != 1)
       {
-        is_update_up = true;
+        update_num = 1;
         dsp_3.fillRect(5-2,0,80,10, BLUE);
         dsp_3.setCursor(5,0);
         dsp_3.print("psi up !");
@@ -432,14 +488,11 @@ void Key_Proc_B(void)
       pre_eeprom_time = millis();
     break;
     
-    case PSI_DN : Serial.println("PSI_DN");
+    case PSI_DN : //Serial.println("PSI_DN");
       hope_psi -= 1;
-      is_update_up = false;
-      is_update_stop = false;
-      is_update_work = false;
-      if( is_update_up == false)
+      if( update_num != 2)
       {
-        is_update_up = true;
+        update_num = 2;
         dsp_3.fillRect(5-2,0,80,10, BLUE);
         dsp_3.setCursor(5,0);
         dsp_3.print("psi down !");
@@ -455,13 +508,10 @@ void Key_Proc_B(void)
       pre_eeprom_time = millis();
     break;
     
-    case PSI_STOP: Serial.println("PSI_STOP");
-      is_update_up = false;
-      is_update_up = false;
-      is_update_work = false;
-      if( is_update_stop == false)
+    case PSI_STOP: //Serial.println("PSI_STOP");
+      if( update_num != 3)
       {
-        is_update_stop = true;
+        update_num = 3;
         dsp_3.fillRect(5-2,0,80,10, BLUE);
         dsp_3.setCursor(5,0);
         dsp_3.print("! stop !");
@@ -471,13 +521,10 @@ void Key_Proc_B(void)
       digitalWrite(PUMP_PORT, LOW);
     break;
     
-    case PSI_WORK: Serial.println("PSI_WORK");
-      is_update_up = false;
-      is_update_up = false;
-      is_update_stop = false;
-      if( is_update_work == false)
+    case PSI_WORK: //Serial.println("PSI_WORK");
+      if( update_num != 4)
       {
-        is_update_work = true;
+        update_num = 4;
         dsp_3.fillRect(5-2,0,80,10, BLUE);
         dsp_3.setCursor(5,0);
         dsp_3.print("puum on !");
@@ -547,7 +594,7 @@ void updatePSI (void)
   if( is_pump_emergency == true)
   {
     digitalWrite(SOLENOID, HIGH);
-    if( real_psi < 110)
+    if( real_psi < 100)
     {
       digitalWrite(SOLENOID, LOW);
       is_pump_emergency = false;
@@ -555,15 +602,65 @@ void updatePSI (void)
   }
 }
 
-void updateMotorStopPos(void)
+void updateMotor(void)
 {
+  static unsigned long pre_hold_time = millis();
   if( is_encoder_working == false) return;
 
+  switch(motor_mode_num)
+  {
+    default :
+      motor_mode_num = 0; // set as default
+      is_encoder_working = false;
+      break;
+
+    case 7 :
+      if( pulses >= pulses_stop_pos)  // default 16,000
+      {
+        digitalWrite(MOTOR_PORT_A, LOW);
+        digitalWrite(MOTOR_PORT_B, LOW);
+        motor_mode_num = 8;
+        pre_hold_time = millis();
+      }
+      break;
+
+    case 8 :
+      if( millis() - pre_hold_time > motor_stop_time * 1000)
+      {
+        motor_mode_num = 9;
+        digitalWrite(MOTOR_PORT_A, LOW);
+        digitalWrite(MOTOR_PORT_B, HIGH);
+      }
+      break;
+      
+    case 9 :
+      if( millis() - pre_encodercheck_time > 50) // if encoder update is not working
+      {
+        is_encoder_working = false;
+        digitalWrite(MOTOR_PORT_A, LOW);
+        digitalWrite(MOTOR_PORT_B, LOW);
+        motor_mode_num = 0;
+      }
+      break;
+  }
+
+  dsp_2.fillRect(60,10,50,10, GREEN);
+  dsp_2.setCursor(60,10);
+  dsp_2.print(pulses);
+}
+
+void updateMotorStopPos(void)
+{
+  if( motor_mode_num != 0xFF) return;
+    
   if( millis() - pre_encodercheck_time > 50) // if encoder update is not working
   {
-    is_encoder_working = false;
+    motor_mode_num = 0;
     digitalWrite(MOTOR_PORT_A, LOW);
     digitalWrite(MOTOR_PORT_B, LOW);
+
+    pulses = 0;
+    is_encoder_working = false;
   }
 }
 
@@ -575,16 +672,19 @@ void readEEPROM (void)
   for (int i = 0; i<6; i++)
   {
     data[i] = EEPROM.read(addr);
-    Serial.print(addr);
-    Serial.print(" : ");
-    Serial.println(data[i]);
     addr += sizeof(signed int);
     delay(1);
   }
+  pulses_stop_pos = EEPROM.read(addr);
+  pulses_stop_pos = pulses_stop_pos << 8;
+  addr += sizeof(signed int);
+  unsigned char temp = EEPROM.read(addr);
+  pulses_stop_pos = pulses_stop_pos | temp;
+
   real_temp = data[0];
   hope_temp = data[1];
-  cw_pos = data[2];
-  ccw_pos = (signed int)data[3];
+  // pulses_stop_pos = data[2];
+  motor_stop_time = data[3];
   real_psi = data[4];
   hope_psi = data[5];
   
@@ -607,8 +707,8 @@ void updateEEPROM (void)
   signed int data[6];
   data[0] = real_temp;
   data[1] = hope_temp;
-  data[2] = cw_pos;
-  data[3] = ccw_pos;
+  data[2] = pulses_stop_pos;
+  data[3] = motor_stop_time;
   data[4] = real_psi;
   data[5] = hope_psi;
   
@@ -618,4 +718,7 @@ void updateEEPROM (void)
     addr += sizeof(signed int);
     delay(1);
   }
+  EEPROM.write(addr, (pulses_stop_pos >> 8) );
+  addr += sizeof(signed int);
+  EEPROM.write(addr, (pulses_stop_pos & 0x00FF) );
 }

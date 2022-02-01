@@ -26,9 +26,9 @@
 #define TEMP_UP     0x01
 #define TEMP_DN     0x02
 
-#define MOTOR_CW    0x04
-#define MOTOR_CCW   0x08
-#define MOTOR_SEL   0x10
+#define MOTOR_MANUAL    0x04
+#define MOTOR_SAVE   0x08
+#define MOTOR_TIME   0x10
 #define MOTOR_WORK  0x0C
 
 #define PSI_UP      0x20
@@ -57,8 +57,8 @@
 // Define ENCODER Motor
 #define MOTOR_PORT_A  43
 #define MOTOR_PORT_B  44
-#define ENCODER_A     2
-#define ENCODER_B     3
+#define ENCODER_A     3
+#define ENCODER_B     2
 
 // Define OLED
 
