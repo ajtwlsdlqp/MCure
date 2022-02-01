@@ -30,13 +30,16 @@ bool is_pump_emergency = false;
 unsigned long pre_eeprom_time = millis();
 bool is_update_infor;
 
+unsigned long pre_encodercheck_time = millis();
+bool is_encoder_working = false;
 signed int cw_pos = 0, ccw_pos = 0;
+signed int pulses = 0;
 bool is_select_opsit = false;
 
 void setup() 
 {
   // put your setup code here, to run once:
-  Serial.begin(9600);
+  Serial.begin(115200);
   Serial.println("M-Cure Demo Board Start");
   Serial.println("Use Command cli (N)");
 
@@ -113,6 +116,10 @@ void setup()
   
   Serial.println("OLED Test end");
   delay(5);
+
+  pinMode(ENCODER_A, INPUT);
+  pinMode(ENCODER_B, INPUT);
+  attachInterrupt(0, A_CHANGE, CHANGE);
 }
 
 void loop() 
@@ -126,8 +133,37 @@ void loop()
 
   updateTemperatrue();
   updatePSI();
-
+  updateMotorStopPos();
+  
   updateEEPROM();
+}
+
+void A_CHANGE() 
+{                                     //Interrupt function to read the x2 pulses of the encoder.
+  if ( digitalRead(ENCODER_B) == 0 ) 
+  {
+    if ( digitalRead(ENCODER_A) == 0 )
+    {
+      pulses--; // Moving forward
+    }
+    else
+    {
+      pulses++; // Moving reverse
+    }
+  } 
+  else 
+  {
+    if ( digitalRead(ENCODER_A) == 0 )
+    {
+      pulses++; // Moving reverse
+    }
+    else
+    {
+      pulses--; // Moving forward
+    }
+  }
+  pre_encodercheck_time = millis();
+  is_encoder_working = true;
 }
 
 
@@ -243,14 +279,14 @@ void Key_Proc_A(void)
         dsp_2.fillRect(5-2,0,100,10, GREEN);
         dsp_2.setCursor(5,0);
         dsp_2.print("cw pos control");
+
+        digitalWrite(MOTOR_PORT_A, HIGH);
+        digitalWrite(MOTOR_PORT_B, LOW);
        }
       
       dsp_2.fillRect(60-2,10,80,10, GREEN);
       dsp_2.setCursor(60,10);
       dsp_2.print(cw_pos);
-      
-      is_update_infor = true;
-      pre_eeprom_time = millis();
     break;
     
     case MOTOR_CCW: Serial.println("MOTOR_CCW");
@@ -263,14 +299,15 @@ void Key_Proc_A(void)
         dsp_2.fillRect(5-2,0,100,10, GREEN);
         dsp_2.setCursor(5,0);
         dsp_2.print("ccw pos control");
+
+        
+        digitalWrite(MOTOR_PORT_A, LOW);
+        digitalWrite(MOTOR_PORT_B, HIGH);
        }
       
       dsp_2.fillRect(60-2,20,80,10, GREEN);
       dsp_2.setCursor(60,20);
       dsp_2.print(ccw_pos);
-
-      is_update_infor = true;
-      pre_eeprom_time = millis();
     break;
     
     case MOTOR_SEL: Serial.println("MOTOR_SEL");
@@ -281,6 +318,9 @@ void Key_Proc_A(void)
         dsp_2.fillRect(5-2,0,100,10, GREEN);
         dsp_2.setCursor(5,0);
         dsp_2.print("select control");
+
+        digitalWrite(MOTOR_PORT_A, LOW);
+        digitalWrite(MOTOR_PORT_B, LOW);
        }
     
       dsp_2.setCursor(5,30);
@@ -464,21 +504,21 @@ void updateTemperatrue (void)
 
   dsp_1.fillRect(78,28,14,14, RED);
   dsp_1.setCursor(80,30);
-  if( real_temp <= hope_temp+2 && real_temp >= hope_temp-2)
+  if( real_temp <= hope_temp+1 && real_temp >= hope_temp-1)
   {
     digitalWrite(PTR_PORT_A, LOW);
     digitalWrite(PTR_PORT_B, LOW);
     digitalWrite(PTR_PORT_FAN, LOW);
     dsp_1.print("OF");
   }
-  else if( real_temp > hope_temp) // Need Cooling
+  else if( real_temp > hope_temp+2) // Need Cooling
   {
     digitalWrite(PTR_PORT_A, LOW);
     digitalWrite(PTR_PORT_B, HIGH);
     digitalWrite(PTR_PORT_FAN, HIGH);
     dsp_1.print("ON");
   }
-  else if( real_temp < hope_temp)
+  else if( real_temp < hope_temp-2)
   {
     digitalWrite(PTR_PORT_A, HIGH);
     digitalWrite(PTR_PORT_B, LOW);
@@ -512,6 +552,18 @@ void updatePSI (void)
       digitalWrite(SOLENOID, LOW);
       is_pump_emergency = false;
     }
+  }
+}
+
+void updateMotorStopPos(void)
+{
+  if( is_encoder_working == false) return;
+
+  if( millis() - pre_encodercheck_time > 50) // if encoder update is not working
+  {
+    is_encoder_working = false;
+    digitalWrite(MOTOR_PORT_A, LOW);
+    digitalWrite(MOTOR_PORT_B, LOW);
   }
 }
 

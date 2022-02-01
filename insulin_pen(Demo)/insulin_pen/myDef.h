@@ -50,12 +50,15 @@
 #define PTR_PORT_B    47
 #define PTR_PORT_FAN  46
 
-// Define OLED
+// Define PSI
 #define PUMP_PORT     41
 #define SOLENOID      40
 
-// Define OLED
-
+// Define ENCODER Motor
+#define MOTOR_PORT_A  43
+#define MOTOR_PORT_B  44
+#define ENCODER_A     2
+#define ENCODER_B     3
 
 // Define OLED
 
