@@ -61,6 +61,7 @@
 #define ENCODER_B     2
 
 // Define OLED
-
+#define CHARGE_ENABLE 13
+#define CHARGE_ON     8
 // Define OLED
 // Define OLED

@@ -16,3 +16,5 @@ void updateEEPROM (void);
 void updateMotor(void);
 void updateMotorStopPos(void);
 void A_CHANGE();  //Interrupt function to read the x2 pulses of the encoder.
+
+void updateChargeEnable(void);

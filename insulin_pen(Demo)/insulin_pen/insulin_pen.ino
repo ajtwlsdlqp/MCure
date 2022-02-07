@@ -48,7 +48,7 @@ void setup()
 
   dsp_1.begin();
   delay(5);
-
+#if DISPLAY_TYPE_3
   dsp_1.fillScreen(RED);
   dsp_1.setCursor(5,0);
   dsp_1.print("temp display");
@@ -90,7 +90,7 @@ void setup()
   dsp_2.print("time  : ");
   dsp_2.setCursor(50, 30);
   dsp_2.print(motor_stop_time);
-  dsp_2.setCursor(65, 30);
+  dsp_2.setCursor(70, 30);
   dsp_2.print("S");
   
   delay(5);
@@ -113,6 +113,75 @@ void setup()
 
   dsp_3.fillRect(0,28,10,10, BLUE);
   delay(5);
+#else
+  dsp_1.fillScreen(BLACK);
+  dsp_1.setTextColor(RED);
+  dsp_1.setCursor(5,0);
+  dsp_1.print("T Hpoe:");
+  dsp_1.setCursor(50,0);
+  dsp_1.print(real_temp);
+  
+  dsp_1.setCursor(5,10);
+  dsp_1.print("T Read:");
+  dsp_1.setCursor(50,10);
+  dsp_1.print(hope_temp);
+  
+  dsp_1.setCursor(5,20);
+  dsp_1.print("FAN State:");
+  dsp_1.setCursor(70,20);
+  dsp_1.print("OFF");
+
+  dsp_1.setTextColor(YELLOW);
+  dsp_1.setCursor(5,40);
+  dsp_1.print("Battery:");
+  dsp_1.setCursor(55,40);
+  dsp_1.print( ( (12.7 * 100 ) / 13.5) );
+  dsp_1.setCursor(85,40);
+  dsp_1.print("%");
+
+  dsp_1.setCursor(5,50);
+  dsp_1.print("Charge:");
+  dsp_1.setCursor(50,50);
+  dsp_1.print("OFF");
+  delay(5);
+  
+  dsp_2.begin();
+  delay(5);
+  dsp_2.fillScreen(BLACK);
+  dsp_2.setTextColor(GREEN);
+  dsp_2.setCursor(5,0);
+  dsp_2.print("M Read:");
+  dsp_2.setCursor(50,0);
+  dsp_2.print(pulses);
+
+  dsp_2.setCursor(5,10);
+  dsp_2.print("M Hope:");
+  dsp_2.setCursor(50,10);
+  dsp_2.print(pulses_stop_pos);
+
+  dsp_2.setCursor(5,20);
+  dsp_2.print("M Hole:");
+  dsp_2.setCursor(50,20);
+  dsp_2.print(motor_stop_time);
+  dsp_2.setCursor(60, 20);
+  dsp_2.print("S");
+
+  dsp_2.setTextColor(BLUE);
+  dsp_2.setCursor(5,30);
+  dsp_2.print("P Read:");
+  dsp_2.setCursor(50,30);
+  dsp_2.print(real_psi);
+
+  dsp_2.setCursor(5,40);
+  dsp_2.print("P Hope:");
+  dsp_2.setCursor(50,40);
+  dsp_2.print(hope_psi);
+
+  dsp_2.setCursor(5,50);
+  dsp_2.print("P Valve:");
+  dsp_2.setCursor(60,50);
+  dsp_2.print("OFF");
+#endif
 
   pinMode(ENCODER_A, INPUT);
   pinMode(ENCODER_B, INPUT);
@@ -134,6 +203,11 @@ void setup()
   digitalWrite(MOTOR_PORT_A, LOW);
   digitalWrite(MOTOR_PORT_B, HIGH);    
   pre_encodercheck_time = millis();
+
+  pinMode(CHARGE_ON, OUTPUT);
+  pinMode(CHARGE_ENABLE, INPUT);
+
+  digitalWrite(CHARGE_ON, LOW);
 }
 
 void loop() 
@@ -150,12 +224,10 @@ void loop()
   
   updateMotor();
   updateMotorStopPos();
+
+  updateChargeEnable();
   
   updateEEPROM();
-
-  dsp_2.fillRect(60-2,10,80,10, GREEN);
-  dsp_2.setCursor(60,10);
-  dsp_2.print(pulses);
 }
 
 void A_CHANGE() 
@@ -239,8 +311,6 @@ void Key_Scan_A(void)   //10ms
 
 void Key_Proc_A(void)
 { 
-  static unsigned char update_title1 = 0x00;
-  
   if(is_key_A_change == false) return;
   is_key_A_change = false;
   switch(KeyA)
@@ -248,18 +318,9 @@ void Key_Proc_A(void)
     case TEMP_UP  : //Serial.println("TEMP_UP");
       hope_temp += 1;
       
-      if( update_title1 != 1)
-      {
-        update_title1 = 1;
-        dsp_1.fillRect(5-2,0,80,10, RED);
-        dsp_1.setCursor(5,0);
-        dsp_1.print("temp up !");
-      }
-
-      dsp_1.fillRect(60-2,10,20,10, RED);
-      dsp_1.setCursor(5,10);
-      dsp_1.print("target : ");
-      dsp_1.setCursor(60,10);
+      dsp_1.fillRect(50,0,30,10, BLACK);
+      dsp_1.setTextColor(RED);
+      dsp_1.setCursor(50,0);
       dsp_1.print(hope_temp);
 
       is_update_infor = true;
@@ -268,19 +329,10 @@ void Key_Proc_A(void)
     
     case TEMP_DN  : //Serial.println("TEMP_Dn");
       hope_temp -= 1;
-
-      if(update_title1 != 2)
-      {
-        update_title1 = 2;
-        dsp_1.fillRect(5-2,0,80,10, RED);
-        dsp_1.setCursor(5,0);
-        dsp_1.print("temp down !");
-       }
       
-      dsp_1.fillRect(60-2,10,20,10, RED);
-      dsp_1.setCursor(5,10);
-      dsp_1.print("target : ");
-      dsp_1.setCursor(60,10);
+      dsp_1.fillRect(50,0,30,10, BLACK);
+      dsp_1.setTextColor(RED);
+      dsp_1.setCursor(50,0);
       dsp_1.print(hope_temp);
       
       is_update_infor = true;
@@ -294,48 +346,32 @@ void Key_Proc_A(void)
       if(motor_mode_num  == 1)
       {
         motor_mode_num = 2;
-        dsp_2.fillRect(5-2,0,100,10, GREEN);
-        dsp_2.setCursor(5,0);
-        dsp_2.print("manual move");
-
         digitalWrite(MOTOR_PORT_A, HIGH);
         digitalWrite(MOTOR_PORT_B, LOW);
        }
        else if( motor_mode_num == 2)
        {
         motor_mode_num = 3;
-        dsp_2.fillRect(5-2,0,100,10, GREEN);
-        dsp_2.setCursor(5,0);
-        dsp_2.print("manual stop");
-
         digitalWrite(MOTOR_PORT_A, LOW);
         digitalWrite(MOTOR_PORT_B, LOW);
        }
        else if( motor_mode_num == 3)
        {
         motor_mode_num = 4;
-        dsp_2.fillRect(5-2,0,100,10, GREEN);
-        dsp_2.setCursor(5,0);
-        dsp_2.print("manual move");
-
         digitalWrite(MOTOR_PORT_A, LOW);
         digitalWrite(MOTOR_PORT_B, HIGH);
        }
        else
        {
         motor_mode_num = 1;
-        dsp_2.fillRect(5-2,0,100,10, GREEN);
-        dsp_2.setCursor(5,0);
-        dsp_2.print("manual stop");
-
         digitalWrite(MOTOR_PORT_A, LOW);
         digitalWrite(MOTOR_PORT_B, LOW);
        }
 
-        dsp_2.fillRect(60-2,20,50,10, GREEN);
-        dsp_2.setCursor(60,20);
+        dsp_2.fillRect(50-2,0,60,10, BLACK);
+        dsp_2.setTextColor(GREEN);
+        dsp_2.setCursor(50,0);
         dsp_2.print(pulses);
-       
     break;
     
     case MOTOR_SAVE: //Serial.println("MOTOR_SAVE"); // set motor stop pos
@@ -346,10 +382,6 @@ void Key_Proc_A(void)
       if(motor_mode_num  != 5)
       {
         motor_mode_num  = 5;
-        dsp_2.fillRect(5-2,0,100,10, GREEN);
-        dsp_2.setCursor(5,0);
-        dsp_2.print("stop pos save");
-
         pulses_stop_pos = pulses;
         is_update_infor = true;
         pre_eeprom_time = millis();
@@ -367,15 +399,13 @@ void Key_Proc_A(void)
       
       is_encoder_working = false;
       motor_mode_num = 6;
-      dsp_2.fillRect(5-2,0,100,10, GREEN);
-      dsp_2.setCursor(5,0);
-      dsp_2.print("select time");
 
       if( motor_stop_time > 10) motor_stop_time  = 1;
       else motor_stop_time += 1;
 
-      dsp_2.fillRect(50-2,30,16,10, GREEN);
-      dsp_2.setCursor(50, 30);
+      dsp_2.fillRect(50-2,20,10,20, BLACK);
+      dsp_2.setTextColor(GREEN);
+      dsp_2.setCursor(50, 20);
       dsp_2.print(motor_stop_time);
 
       is_update_infor = true;
@@ -451,12 +481,10 @@ void Key_Proc_B(void)
       if(motor_mode_num != 7)
       {
         motor_mode_num = 7;
-        dsp_2.fillRect(5-2,0,100,10, GREEN);
-        dsp_2.setCursor(5,0);
-        dsp_2.print("work 1 cycle");
 
-        dsp_2.fillRect(60-2,20,100,10, GREEN);
-        dsp_2.setCursor(60,20);
+        dsp_2.fillRect(50-2,10,100,10, BLACK);
+        dsp_2.setTextColor(GREEN);
+        dsp_2.setCursor(50,10);
         dsp_2.print(pulses_stop_pos);
 
         pulses = 0;
@@ -470,19 +498,11 @@ void Key_Proc_B(void)
     
     case PSI_UP  : //Serial.println("PSI_UP");
       hope_psi += 1;
-      if( update_num != 1)
-      {
-        update_num = 1;
-        dsp_3.fillRect(5-2,0,80,10, BLUE);
-        dsp_3.setCursor(5,0);
-        dsp_3.print("psi up !");
-      }
 
-      dsp_3.fillRect(60-2,10,30,10, BLUE);
-      dsp_3.setCursor(5,10);
-      dsp_3.print("target : ");
-      dsp_3.setCursor(60,10);
-      dsp_3.print(hope_psi);
+      dsp_2.fillRect(50-2,40,30,40, BLACK);
+      dsp_2.setTextColor(BLUE);
+      dsp_2.setCursor(50,40);
+      dsp_2.print(hope_psi);
       
       is_update_infor = true;
       pre_eeprom_time = millis();
@@ -490,45 +510,24 @@ void Key_Proc_B(void)
     
     case PSI_DN : //Serial.println("PSI_DN");
       hope_psi -= 1;
-      if( update_num != 2)
-      {
-        update_num = 2;
-        dsp_3.fillRect(5-2,0,80,10, BLUE);
-        dsp_3.setCursor(5,0);
-        dsp_3.print("psi down !");
-      }
 
-      dsp_3.fillRect(60-2,10,30,10, BLUE);
-      dsp_3.setCursor(5,10);
-      dsp_3.print("target : ");
-      dsp_3.setCursor(60,10);
-      dsp_3.print(hope_psi);
+      dsp_2.fillRect(50-2,40,30,40, BLACK);
+      dsp_2.setTextColor(BLUE);
+      dsp_2.setCursor(50,40);
+      dsp_2.print(hope_psi);
       
       is_update_infor = true;
       pre_eeprom_time = millis();
     break;
     
     case PSI_STOP: //Serial.println("PSI_STOP");
-      if( update_num != 3)
-      {
-        update_num = 3;
-        dsp_3.fillRect(5-2,0,80,10, BLUE);
-        dsp_3.setCursor(5,0);
-        dsp_3.print("! stop !");
-      }
       is_pump_working = false;
       is_pump_emergency = true;
       digitalWrite(PUMP_PORT, LOW);
     break;
     
     case PSI_WORK: //Serial.println("PSI_WORK");
-      if( update_num != 4)
-      {
-        update_num = 4;
-        dsp_3.fillRect(5-2,0,80,10, BLUE);
-        dsp_3.setCursor(5,0);
-        dsp_3.print("puum on !");
-      }
+
       is_pump_working = true;
       is_pump_emergency = false;
     break;
@@ -545,33 +544,42 @@ void updateTemperatrue (void)
   // update need atleast 200ms
   real_temp = thermocouple.readCelsius();
 
-  dsp_1.fillRect(78,18,14,14, RED);
-  dsp_1.setCursor(80,20);
+  dsp_1.fillRect(50-2,10,20,10, BLACK);
+  dsp_1.setTextColor(RED);
+  dsp_1.setCursor(50,10);
   dsp_1.print(real_temp);
 
-  dsp_1.fillRect(78,28,14,14, RED);
-  dsp_1.setCursor(80,30);
+  dsp_1.fillRect(70-2,20,20,10, BLACK);
+  dsp_1.setTextColor(RED);
+  dsp_1.setCursor(70,20);
   if( real_temp <= hope_temp+1 && real_temp >= hope_temp-1)
   {
     digitalWrite(PTR_PORT_A, LOW);
     digitalWrite(PTR_PORT_B, LOW);
     digitalWrite(PTR_PORT_FAN, LOW);
-    dsp_1.print("OF");
+    dsp_1.print("OFF");
   }
-  else if( real_temp > hope_temp+2) // Need Cooling
+  else if( real_temp > hope_temp+3) // Need Cooling
   {
     digitalWrite(PTR_PORT_A, LOW);
     digitalWrite(PTR_PORT_B, HIGH);
     digitalWrite(PTR_PORT_FAN, HIGH);
     dsp_1.print("ON");
   }
-  else if( real_temp < hope_temp-2)
+  else if( real_temp < hope_temp-3)
   {
     digitalWrite(PTR_PORT_A, HIGH);
     digitalWrite(PTR_PORT_B, LOW);
     digitalWrite(PTR_PORT_FAN, HIGH);
     dsp_1.print("ON");
   }
+
+  float battery = analogRead(0)* 5 / 1024;
+  battery = battery * 6;
+  dsp_1.fillRect(55-2,40,32,10, BLACK);
+  dsp_1.setTextColor(YELLOW);
+  dsp_1.setCursor(55,40);
+  dsp_1.print( ( (battery * 100) / 13.5) );
 
 }
 
@@ -581,9 +589,10 @@ void updatePSI (void)
   pre_psi_readtime = millis();
 
   real_psi = analogRead(A8);
-  dsp_3.fillRect(68,18,40,14, BLUE);
-  dsp_3.setCursor(70,20);
-  dsp_3.print(real_psi);
+  dsp_2.fillRect(50-2,30,40,10, BLACK);
+  dsp_2.setTextColor(BLUE);
+  dsp_2.setCursor(50,30);
+  dsp_2.print(real_psi);
 
   if( is_pump_working == true)
   {
@@ -630,6 +639,8 @@ void updateMotor(void)
         motor_mode_num = 9;
         digitalWrite(MOTOR_PORT_A, LOW);
         digitalWrite(MOTOR_PORT_B, HIGH);
+
+        pre_encodercheck_time = millis();
       }
       break;
       
@@ -644,12 +655,13 @@ void updateMotor(void)
       break;
   }
 
-  dsp_2.fillRect(60,10,50,10, GREEN);
-  dsp_2.setCursor(60,10);
+  dsp_2.fillRect(50,0,50,10, BLACK);
+  dsp_2.setTextColor(GREEN);
+  dsp_2.setCursor(50,0);
   dsp_2.print(pulses);
 }
 
-void updateMotorStopPos(void)
+void updateMotorStopPos(void) // only check when mcu start @at once
 {
   if( motor_mode_num != 0xFF) return;
     
@@ -661,6 +673,36 @@ void updateMotorStopPos(void)
 
     pulses = 0;
     is_encoder_working = false;
+  }
+}
+
+void updateChargeEnable(void)
+{
+  static bool is_update_charge = false;
+  
+  if(digitalRead(13) == HIGH)
+  {
+    if( is_update_charge == false)
+    {
+      is_update_charge = true;
+      dsp_1.fillRect(50-2,50,32,10, BLACK);
+      dsp_1.setTextColor(YELLOW);
+      dsp_1.setCursor(50,50);
+      dsp_1.print("ON");
+    }
+    digitalWrite(CHARGE_ON, HIGH);
+  }
+  else
+  {
+    if( is_update_charge == true)
+    {
+      is_update_charge = false;
+      dsp_1.fillRect(50-2,50,32,10, BLACK);
+      dsp_1.setTextColor(YELLOW);
+      dsp_1.setCursor(50,50);
+      dsp_1.print("OFF");
+    }
+    digitalWrite(CHARGE_ON, LOW);
   }
 }
 
