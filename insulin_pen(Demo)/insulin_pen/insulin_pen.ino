@@ -605,7 +605,7 @@ void updatePSI (void)
   // Sensor Read Range 0.5 ~ 4.5
   if( real_psi < 102)
   {
-    real_psi = 0;  // un clear data
+    temp_mmhg = 0;  // un clear data
   }
   else
   {
