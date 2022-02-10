@@ -427,8 +427,8 @@ void Key_Read_B(void)
   int data2 = analogRead(A2);
 
   if( data2 > 937 ){ KeyB = 0xFF; }
-  else if(data2 > 819){ KeyB = PSI_DN; }
-  else if(data2 > 694){ KeyB = PSI_UP; }
+  else if(data2 > 819){ KeyB = PSI_UP; }
+  else if(data2 > 694){ KeyB = PSI_DN; }
   else if(data2 > 558){ KeyB = PSI_STOP; }
   else if(data2 > 388){ KeyB = PSI_WORK; }
   else if(data2 > 146) { KeyB = MOTOR_WORK; }
