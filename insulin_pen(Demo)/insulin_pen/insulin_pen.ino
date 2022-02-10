@@ -41,6 +41,7 @@ unsigned char motor_mode_num = 0xFF;
 
 void setup() 
 {
+  double setup_mmHg;
   // put your setup code here, to run once:
   Serial.begin(115200);
 
@@ -170,12 +171,14 @@ void setup()
   dsp_2.setCursor(5,30);
   dsp_2.print("P Read:");
   dsp_2.setCursor(50,30);
-  dsp_2.print(real_psi);
+  setup_mmHg = (((real_psi*5/1024)-0.5)*3.75)*51.714752;
+  dsp_2.print((-1)*setup_mmHg);
 
   dsp_2.setCursor(5,40);
   dsp_2.print("P Hope:");
   dsp_2.setCursor(50,40);
-  dsp_2.print(hope_psi);
+  setup_mmHg = (((hope_psi*5/1024)-0.5)*3.75)*51.714752;
+  dsp_2.print((-1)*setup_mmHg);
 
   dsp_2.setCursor(5,50);
   dsp_2.print("P Valve:");
@@ -403,10 +406,12 @@ void Key_Proc_A(void)
       if( motor_stop_time > 10) motor_stop_time  = 1;
       else motor_stop_time += 1;
 
-      dsp_2.fillRect(50-2,20,10,20, BLACK);
+      dsp_2.fillRect(50-2,20,30,20, BLACK);
       dsp_2.setTextColor(GREEN);
       dsp_2.setCursor(50, 20);
       dsp_2.print(motor_stop_time);
+      dsp_2.setCursor(60, 20);
+      dsp_2.print("S");
 
       is_update_infor = true;
       pre_eeprom_time = millis();
@@ -471,6 +476,7 @@ void Key_Scan_B(void)   //10ms
 void Key_Proc_B(void)
 { 
   static unsigned char update_num = 0;
+  double float_mmHg;
   
   if(is_key_B_change == false) return;
   is_key_B_change = false;
@@ -497,24 +503,28 @@ void Key_Proc_B(void)
     break;
     
     case PSI_UP  : //Serial.println("PSI_UP");
-      hope_psi += 1;
+      if(++hope_psi > 921) hope_psi = 921;
 
-      dsp_2.fillRect(50-2,40,30,40, BLACK);
+      float_mmHg = (((hope_psi*5/1024)-0.5)*3.75)*51.714752;
+  
+      dsp_2.fillRect(50-2,40,100,40, BLACK);
       dsp_2.setTextColor(BLUE);
       dsp_2.setCursor(50,40);
-      dsp_2.print(hope_psi);
+      dsp_2.print( (-1)*float_mmHg );
       
       is_update_infor = true;
       pre_eeprom_time = millis();
     break;
     
     case PSI_DN : //Serial.println("PSI_DN");
-      hope_psi -= 1;
+      if(--hope_psi < 102) hope_psi = 102;
+      
+      float_mmHg = (((hope_psi*5/1024)-0.5)*3.75)*51.714752;
 
-      dsp_2.fillRect(50-2,40,30,40, BLACK);
+      dsp_2.fillRect(50-2,40,100,40, BLACK);
       dsp_2.setTextColor(BLUE);
       dsp_2.setCursor(50,40);
-      dsp_2.print(hope_psi);
+      dsp_2.print( (-1)*float_mmHg );
       
       is_update_infor = true;
       pre_eeprom_time = millis();
@@ -530,6 +540,7 @@ void Key_Proc_B(void)
 
       is_pump_working = true;
       is_pump_emergency = false;
+      digitalWrite(SOLENOID, LOW);  // block solenoide
     break;
     
     default : break;
@@ -585,27 +596,38 @@ void updateTemperatrue (void)
 
 void updatePSI (void)
 {
+  double temp_mmhg;
   if( millis() - pre_psi_readtime < 100) return;
   pre_psi_readtime = millis();
 
   real_psi = analogRead(A8);
-  dsp_2.fillRect(50-2,30,40,10, BLACK);
+
+  // Sensor Read Range 0.5 ~ 4.5
+  if( real_psi < 102)
+  {
+    real_psi = 0;  // un clear data
+  }
+  else
+  {
+    temp_mmhg = (((real_psi*5/1024)-0.5)*3.75)*51.714752;
+  }
+  
+  dsp_2.fillRect(50-2,30,100,10, BLACK);
   dsp_2.setTextColor(BLUE);
   dsp_2.setCursor(50,30);
-  dsp_2.print(real_psi);
+  dsp_2.print((-1)*temp_mmhg);
 
   if( is_pump_working == true)
   {
     if(real_psi < hope_psi) digitalWrite(PUMP_PORT, HIGH);  // active pump
-    else if( real_psi >= hope_psi) digitalWrite(PUMP_PORT, LOW);  // de-active pump
+    else if( real_psi > hope_psi) digitalWrite(PUMP_PORT, LOW);  // de-active pump
   }
 
   if( is_pump_emergency == true)
   {
     digitalWrite(SOLENOID, HIGH);
-    if( real_psi < 100)
+    if( analogRead(A8) < 102)
     {
-      digitalWrite(SOLENOID, LOW);
       is_pump_emergency = false;
     }
   }
@@ -729,7 +751,12 @@ void readEEPROM (void)
   motor_stop_time = data[3];
   real_psi = data[4];
   hope_psi = data[5];
-  
+
+  // set as default value
+  if( hope_temp <= 0 || hope_temp >= 60) hope_temp = 25;
+  if( pulses_stop_pos <= 0 || pulses_stop_pos >= 30000) pulses_stop_pos = 14000;
+  if( motor_stop_time <= 0 || motor_stop_time >= 13) motor_stop_time = 2;
+  if( hope_psi <= 0 || hope_psi >= 922) hope_psi = 300;
 }
 
 void updateEEPROM (void)
