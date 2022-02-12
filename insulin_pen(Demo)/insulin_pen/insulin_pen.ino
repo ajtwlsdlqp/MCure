@@ -18,12 +18,15 @@ unsigned long pre_key_B_readtime = millis();
 bool is_key_A_change = false;
 bool is_key_B_change = false;
 
+bool is_motor_long_key = false;
+
 signed int real_temp = 20, hope_temp = 0;
 MAX6675 thermocouple(TEMP_CLK, TEMP_CS, TEMP_DO);
 unsigned long pre_temp_readtime = millis();
 
 signed int real_psi = 0, hope_psi = 0;
 unsigned long pre_psi_readtime = millis();
+unsigned long pre_valve_close_time = millis();
 bool is_pump_working = false;
 bool is_pump_emergency = false;
 
@@ -34,14 +37,14 @@ unsigned long pre_encodercheck_time = millis();
 unsigned long pre_motor_stop_time = millis();
 bool is_encoder_working = false;
 signed int pulses = 0;
-unsigned int pulses_stop_pos = 16000;
+unsigned int pulses_stop_pos = 0;
 unsigned char motor_stop_time = 1;
-unsigned char motor_mode_num = 0xFF;
+unsigned char motor_mode_num = 0;
 
 
 void setup() 
 {
-  double setup_mmHg;
+  double cal_temp;
   // put your setup code here, to run once:
   Serial.begin(115200);
 
@@ -86,7 +89,9 @@ void setup()
   dsp_2.print("target : ");
   dsp_2.setCursor(60,20);
   dsp_2.print(pulses_stop_pos);
-  
+
+  // set default 
+  motor_stop_time = 2;
   dsp_2.setCursor(5,30);
   dsp_2.print("time  : ");
   dsp_2.setCursor(50, 30);
@@ -159,26 +164,36 @@ void setup()
   dsp_2.print("M Hope:");
   dsp_2.setCursor(50,10);
   dsp_2.print(pulses_stop_pos);
-
+#if PEN_VERSION
   dsp_2.setCursor(5,20);
-  dsp_2.print("M Hole:");
+  dsp_2.print("M Hold:");
   dsp_2.setCursor(50,20);
   dsp_2.print(motor_stop_time);
   dsp_2.setCursor(60, 20);
   dsp_2.print("S");
-
+#endif
   dsp_2.setTextColor(BLUE);
   dsp_2.setCursor(5,30);
   dsp_2.print("P Read:");
   dsp_2.setCursor(50,30);
-  setup_mmHg = (((real_psi*5/1024)-0.5)*3.75)*51.714752;
-  dsp_2.print((-1)*setup_mmHg);
+  
+  cal_temp = ((double)real_psi * 5) / 1024;
+  cal_temp = cal_temp - 0.5;
+  cal_temp = cal_temp * 3.75;
+  cal_temp = cal_temp * 51.71;
+  
+  dsp_2.print((signed int)cal_temp);
 
   dsp_2.setCursor(5,40);
   dsp_2.print("P Hope:");
   dsp_2.setCursor(50,40);
-  setup_mmHg = (((hope_psi*5/1024)-0.5)*3.75)*51.714752;
-  dsp_2.print((-1)*setup_mmHg);
+
+  cal_temp = ((double)hope_psi * 5) / 1024;
+  cal_temp = cal_temp - 0.5;
+  cal_temp = cal_temp * 3.75;
+  cal_temp = cal_temp * 51.71;
+  
+  dsp_2.print((signed int)cal_temp);
 
   dsp_2.setCursor(5,50);
   dsp_2.print("P Valve:");
@@ -202,7 +217,7 @@ void setup()
   digitalWrite(MOTOR_PORT_B, LOW);
   
   pulses = 0;
-  motor_mode_num = 0xFF;
+  motor_mode_num = 0;
   digitalWrite(MOTOR_PORT_A, LOW);
   digitalWrite(MOTOR_PORT_B, HIGH);    
   pre_encodercheck_time = millis();
@@ -226,7 +241,7 @@ void loop()
   updatePSI();
   
   updateMotor();
-  updateMotorStopPos();
+  // updateMotorStopPos();
 
   updateChargeEnable();
   
@@ -268,9 +283,15 @@ void Key_Read_A(void)
   if( data1 > 937 ){ KeyA = 0xFF; }
   else if(data1 > 819){ KeyA = TEMP_UP; }
   else if(data1 > 694){ KeyA = TEMP_DN; }
+#if PEN_VERSION
   else if(data1 > 558){ KeyA = MOTOR_MANUAL; }
   else if(data1 > 388){ KeyA = MOTOR_TIME; }
   else if(data1 > 146) { KeyA = MOTOR_SAVE; }
+#else
+  else if(data1 > 558){ KeyA = MOTOR_UP; }
+  else if(data1 > 388){ KeyA = MOTOR_BACK; }
+  else if(data1 > 146) { KeyA = MOTOR_DN; }
+#endif
   else { KeyA = 0xFF; }
 }
 
@@ -302,12 +323,20 @@ void Key_Scan_A(void)   //10ms
           is_key_A_change = 1;
           AutoKeyCountA = 3; // about 0.15s
         }
+
+        if( KeyA == MOTOR_UP || KeyA == MOTOR_DN )
+        {
+          is_key_A_change = 1;
+          AutoKeyCountA = 2; // about 0.15s
+          is_motor_long_key = true;
+        }
       }
     }
   }
   else  
   {
       f_PressedKeyA = 0;
+      is_motor_long_key = false;
   }
   PrevKeyA = KeyA;
 }
@@ -341,7 +370,8 @@ void Key_Proc_A(void)
       is_update_infor = true;
       pre_eeprom_time = millis();
     break;
-    
+
+#if PEN_VERSION
     case MOTOR_MANUAL : //Serial.println("MOTOR_MANUAL"); // manual control motor stop pos
       if(motor_mode_num >= 7) break;  // if motor working 1 cycle mode not enterence
       if(motor_mode_num == 0xFF) break; // if motor goto start pos break;
@@ -375,8 +405,25 @@ void Key_Proc_A(void)
         dsp_2.setTextColor(GREEN);
         dsp_2.setCursor(50,0);
         dsp_2.print(pulses);
+#else
+    case MOTOR_UP :
+      if(motor_mode_num >= 7) break;  // if motor working 1 cycle mode not enterence
+      if(motor_mode_num == 0xFF) break; // if motor goto start pos break;
+      is_encoder_working = false;
+
+      pulses_stop_pos += 1;
+
+      dsp_2.fillRect(50-2,10,100,10, BLACK);
+      dsp_2.setTextColor(GREEN);
+      dsp_2.setCursor(50,10);
+      dsp_2.print(pulses_stop_pos);
+
+      is_update_infor = true;
+      pre_eeprom_time = millis();
+#endif
     break;
-    
+
+#if PEN_VERSION
     case MOTOR_SAVE: //Serial.println("MOTOR_SAVE"); // set motor stop pos
       if(motor_mode_num  >= 7) break;
       if(motor_mode_num == 0xFF) break; // if motor goto start pos break;
@@ -394,8 +441,26 @@ void Key_Proc_A(void)
         digitalWrite(MOTOR_PORT_B, HIGH);    
         pre_encodercheck_time = millis();
       }
+#else
+    case MOTOR_DN :
+      if(motor_mode_num >= 7) break;  // if motor working 1 cycle mode not enterence
+      if(motor_mode_num == 0xFF) break; // if motor goto start pos break;
+      is_encoder_working = false;
+      
+      pulses_stop_pos -= 1;
+
+        
+      dsp_2.fillRect(50-2,10,100,10, BLACK);
+      dsp_2.setTextColor(GREEN);
+      dsp_2.setCursor(50,10);
+      dsp_2.print(pulses_stop_pos);
+
+      is_update_infor = true;
+      pre_eeprom_time = millis();
+#endif
     break;
-    
+
+#if PEN_VERSION
     case MOTOR_TIME: //Serial.println("MOTOR_WORK");  // setting motor stop time
       if(motor_mode_num >= 7) break;
       if(motor_mode_num == 0xFF) break; // if motor goto start pos break;
@@ -415,6 +480,18 @@ void Key_Proc_A(void)
 
       is_update_infor = true;
       pre_eeprom_time = millis();
+#else
+    case MOTOR_BACK:
+      if(motor_mode_num == 0xFF) break; // if motor goto start pos break;
+
+      digitalWrite(MOTOR_PORT_A, LOW);
+      digitalWrite(MOTOR_PORT_B, HIGH);
+
+      is_encoder_working = true;
+      motor_mode_num = 15;
+
+      pre_encodercheck_time = millis();
+#endif
     break;
 
     default : break;
@@ -483,6 +560,7 @@ void Key_Proc_B(void)
 
   switch(KeyB)
   {
+#if PEN_VERSION
     case MOTOR_WORK  : //Serial.println("MOTOR_WORK");  // motor work 1 cycle
       if(motor_mode_num != 7)
       {
@@ -500,31 +578,62 @@ void Key_Proc_B(void)
         pre_encodercheck_time = millis();
         is_encoder_working = true;
        }
+#else
+    case MOTOR_WORK  : //Serial.println("MOTOR_WORK");  // motor work 1 cycle
+    if( is_encoder_working == true) break;
+    if( motor_mode_num >= 14) break;
+    
+    if( motor_mode_num < 7)
+    {
+      motor_mode_num = 7;
+      pulses = 0;
+    }
+    else
+    {
+      motor_mode_num += 1;
+    }
+
+    digitalWrite(MOTOR_PORT_A, HIGH);
+    digitalWrite(MOTOR_PORT_B, LOW);
+
+    pre_encodercheck_time = millis();
+    is_encoder_working = true;
+#endif
     break;
     
     case PSI_UP  : //Serial.println("PSI_UP");
-      if(++hope_psi > 921) hope_psi = 921;
+      // if(++hope_psi > 921) hope_psi = 921;
+      hope_psi += 1;
+      if( hope_psi >= 921){ hope_psi = 921; }
 
-      float_mmHg = (((hope_psi*5/1024)-0.5)*3.75)*51.714752;
+      float_mmHg = ((double)hope_psi * 5) / 1024;
+      float_mmHg = float_mmHg - 0.5;
+      float_mmHg = float_mmHg * 3.75;
+      float_mmHg = float_mmHg * 51.71;
   
       dsp_2.fillRect(50-2,40,100,40, BLACK);
       dsp_2.setTextColor(BLUE);
       dsp_2.setCursor(50,40);
-      dsp_2.print( (-1)*float_mmHg );
+      dsp_2.print((signed int)float_mmHg);
       
       is_update_infor = true;
       pre_eeprom_time = millis();
     break;
     
     case PSI_DN : //Serial.println("PSI_DN");
-      if(--hope_psi < 102) hope_psi = 102;
+      // if(--hope_psi < 102) hope_psi = 102;
+      hope_psi -= 1;
+      if( hope_psi <= 102){ hope_psi = 102; }
       
-      float_mmHg = (((hope_psi*5/1024)-0.5)*3.75)*51.714752;
-
+      float_mmHg = ((double)hope_psi * 5) / 1024;
+      float_mmHg = float_mmHg - 0.5;
+      float_mmHg = float_mmHg * 3.75;
+      float_mmHg = float_mmHg * 51.71;
+  
       dsp_2.fillRect(50-2,40,100,40, BLACK);
       dsp_2.setTextColor(BLUE);
       dsp_2.setCursor(50,40);
-      dsp_2.print( (-1)*float_mmHg );
+      dsp_2.print((signed int)float_mmHg);
       
       is_update_infor = true;
       pre_eeprom_time = millis();
@@ -534,6 +643,8 @@ void Key_Proc_B(void)
       is_pump_working = false;
       is_pump_emergency = true;
       digitalWrite(PUMP_PORT, LOW);
+      digitalWrite(SOLENOID, HIGH);
+      pre_valve_close_time = millis();
     break;
     
     case PSI_WORK: //Serial.println("PSI_WORK");
@@ -609,13 +720,16 @@ void updatePSI (void)
   }
   else
   {
-    temp_mmhg = (((real_psi*5/1024)-0.5)*3.75)*51.714752;
+    temp_mmhg = ((double)real_psi * 5) / 1024;
+    temp_mmhg = temp_mmhg - 0.5;
+    temp_mmhg = temp_mmhg * 3.75;
+    temp_mmhg = temp_mmhg * 51.71;
   }
   
   dsp_2.fillRect(50-2,30,100,10, BLACK);
   dsp_2.setTextColor(BLUE);
   dsp_2.setCursor(50,30);
-  dsp_2.print((-1)*temp_mmhg);
+  dsp_2.print((signed int)temp_mmhg);
 
   if( is_pump_working == true)
   {
@@ -625,11 +739,15 @@ void updatePSI (void)
 
   if( is_pump_emergency == true)
   {
-    digitalWrite(SOLENOID, HIGH);
-    if( analogRead(A8) < 102)
+    if( millis() - pre_valve_close_time > 2 * 1000)
     {
-      is_pump_emergency = false;
+        is_pump_emergency = false;
+        digitalWrite(SOLENOID, LOW);  // block solenoide
     }
+//    if( analogRead(A8) < 102)
+//    {
+//      is_pump_emergency = false;
+//    }
   }
 }
 
@@ -640,44 +758,115 @@ void updateMotor(void)
 
   switch(motor_mode_num)
   {
-    default :
-      motor_mode_num = 0; // set as default
-      is_encoder_working = false;
-      break;
+    default : break;
 
     case 7 :
       if( pulses >= pulses_stop_pos)  // default 16,000
       {
         digitalWrite(MOTOR_PORT_A, LOW);
         digitalWrite(MOTOR_PORT_B, LOW);
-        motor_mode_num = 8;
+        motor_mode_num += 1;
+        pre_hold_time = millis();
+        is_encoder_working = false;
+      }
+      break;
+    case 8 :
+      /*
+      if( millis() - pre_hold_time > motor_stop_time * 1000)
+      {
+        motor_mode_num += 1;
+        digitalWrite(MOTOR_PORT_A, HIGH);
+        digitalWrite(MOTOR_PORT_B, LOW);
+
+        pre_encodercheck_time = millis();
+      }
+      */
+      break;
+
+    case 9 :
+      if( pulses >= pulses_stop_pos*2)  // default 16,000
+      {
+        digitalWrite(MOTOR_PORT_A, LOW);
+        digitalWrite(MOTOR_PORT_B, LOW);
+        motor_mode_num += 1;
+        pre_hold_time = millis();
+       is_encoder_working = false;
+      }
+      break;
+    case 10:
+    /*
+      if( millis() - pre_hold_time > motor_stop_time * 1000)
+      {
+        motor_mode_num += 1;
+        digitalWrite(MOTOR_PORT_A, HIGH);
+        digitalWrite(MOTOR_PORT_B, LOW);
+
+        pre_encodercheck_time = millis();
+      }
+      */
+      break;
+
+    case 11:
+      if( pulses >= pulses_stop_pos*3)  // default 16,000
+      {
+        digitalWrite(MOTOR_PORT_A, LOW);
+        digitalWrite(MOTOR_PORT_B, LOW);
+        motor_mode_num += 1;
+        pre_hold_time = millis();
+       is_encoder_working = false;
+      }
+      break;
+    case 12:
+      /*
+      if( millis() - pre_hold_time > motor_stop_time * 1000)
+      {
+        motor_mode_num += 1;
+        digitalWrite(MOTOR_PORT_A, HIGH);
+        digitalWrite(MOTOR_PORT_B, LOW);
+
+        pre_encodercheck_time = millis();
+      }
+      */
+      break;
+
+    case 13:
+//      if( pulses >= pulses_stop_pos*16*4 || millis() - pre_encodercheck_time > 50)  // default 16,000
+      if( millis() - pre_encodercheck_time > 50)  // default 16,000
+      {
+        digitalWrite(MOTOR_PORT_A, LOW);
+        digitalWrite(MOTOR_PORT_B, LOW);
+        motor_mode_num += 1;
+
+        is_encoder_working = false;
         pre_hold_time = millis();
       }
       break;
 
-    case 8 :
-      if( millis() - pre_hold_time > motor_stop_time * 1000)
-      {
-        motor_mode_num = 9;
-        digitalWrite(MOTOR_PORT_A, LOW);
-        digitalWrite(MOTOR_PORT_B, HIGH);
-
-        pre_encodercheck_time = millis();
-      }
+    case 14: // just hold state
       break;
-      
-    case 9 :
-      if( millis() - pre_encodercheck_time > 50) // if encoder update is not working
+
+    case 15:
+      digitalWrite(MOTOR_PORT_A, LOW);
+      digitalWrite(MOTOR_PORT_B, HIGH);
+      motor_mode_num += 1;
+
+      pre_encodercheck_time = millis();
+      break;
+
+    case 16:
+    if( millis() - pre_encodercheck_time > 50)  // default 16,000
       {
-        is_encoder_working = false;
         digitalWrite(MOTOR_PORT_A, LOW);
         digitalWrite(MOTOR_PORT_B, LOW);
         motor_mode_num = 0;
+        pulses = 0;
+        pre_hold_time = millis();
+
+        is_encoder_working = false;
       }
-      break;
   }
 
-  dsp_2.fillRect(50,0,50,10, BLACK);
+  dsp_2.fillRect(50,0,100,10, BLACK);
   dsp_2.setTextColor(GREEN);
   dsp_2.setCursor(50,0);
   dsp_2.print(pulses);
@@ -754,7 +943,7 @@ void readEEPROM (void)
 
   // set as default value
   if( hope_temp <= 0 || hope_temp >= 60) hope_temp = 25;
-  if( pulses_stop_pos <= 0 || pulses_stop_pos >= 30000) pulses_stop_pos = 14000;
+  if( pulses_stop_pos <= 0 || pulses_stop_pos >= 5000) pulses_stop_pos = 0;
   if( motor_stop_time <= 0 || motor_stop_time >= 13) motor_stop_time = 2;
   if( hope_psi <= 0 || hope_psi >= 922) hope_psi = 300;
 }

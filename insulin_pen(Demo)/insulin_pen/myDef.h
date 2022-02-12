@@ -26,10 +26,17 @@
 #define TEMP_UP     0x01
 #define TEMP_DN     0x02
 
-#define MOTOR_MANUAL    0x04
+#if PEN_VERSION
+#define MOTOR_MANUAL 0x04
 #define MOTOR_SAVE   0x08
 #define MOTOR_TIME   0x10
-#define MOTOR_WORK  0x0C
+#define MOTOR_WORK   0x0C
+#else
+#define MOTOR_UP   0x04
+#define MOTOR_DN   0x08
+#define MOTOR_BACK   0x10
+#define MOTOR_WORK   0x0C
+#endif
 
 #define PSI_UP      0x20
 #define PSI_DN      0x40
