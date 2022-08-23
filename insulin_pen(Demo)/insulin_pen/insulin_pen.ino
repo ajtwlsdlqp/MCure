@@ -125,12 +125,12 @@ void setup()
   dsp_1.setCursor(5,0);
   dsp_1.print("T Hpoe:");
   dsp_1.setCursor(50,0);
-  dsp_1.print(real_temp);
+  dsp_1.print(hope_temp);
   
   dsp_1.setCursor(5,10);
   dsp_1.print("T Read:");
   dsp_1.setCursor(50,10);
-  dsp_1.print(hope_temp);
+  dsp_1.print(real_temp);
   
   dsp_1.setCursor(5,20);
   dsp_1.print("FAN State:");
@@ -219,7 +219,7 @@ void setup()
   pulses = 0;
   motor_mode_num = 0;
   digitalWrite(MOTOR_PORT_A, LOW);
-  digitalWrite(MOTOR_PORT_B, HIGH);    
+  digitalWrite(MOTOR_PORT_B, LOW);    
   pre_encodercheck_time = millis();
 
   pinMode(CHARGE_ON, OUTPUT);
@@ -327,7 +327,7 @@ void Key_Scan_A(void)   //10ms
         if( KeyA == MOTOR_UP || KeyA == MOTOR_DN )
         {
           is_key_A_change = 1;
-          AutoKeyCountA = 2; // about 0.15s
+          AutoKeyCountA = 1; // about 0.15s
           is_motor_long_key = true;
         }
       }
@@ -343,6 +343,11 @@ void Key_Scan_A(void)   //10ms
 
 void Key_Proc_A(void)
 { 
+  static unsigned long pre_motor_up_push = millis();
+  static unsigned long pre_motor_dn_push = millis();
+  static bool is_motor_up_push = false;
+  static bool is_motor_dn_push = false;
+  
   if(is_key_A_change == false) return;
   is_key_A_change = false;
   switch(KeyA)
@@ -407,11 +412,35 @@ void Key_Proc_A(void)
         dsp_2.print(pulses);
 #else
     case MOTOR_UP :
-      if(motor_mode_num >= 7) break;  // if motor working 1 cycle mode not enterence
+      if(motor_mode_num == 7) break;  // if motor working 1 cycle mode not enterence
       if(motor_mode_num == 0xFF) break; // if motor goto start pos break;
       is_encoder_working = false;
-
-      pulses_stop_pos += 1;
+      
+      if( is_motor_long_key )
+      {
+        pulses_stop_pos += 1;
+        is_motor_up_push = false;
+      }
+      else  // single touch
+      {
+        if( is_motor_up_push == false) 
+        {
+          pulses_stop_pos += 1;
+          is_motor_up_push = true;
+          pre_motor_up_push = millis();
+        }
+        else if( millis() - pre_motor_up_push < 500)
+        {
+          pulses_stop_pos += 50;
+          is_motor_up_push = false;
+        }
+        else
+        {
+          pulses_stop_pos += 1;
+          is_motor_up_push = true;
+          pre_motor_up_push = millis();
+        }
+      }
 
       dsp_2.fillRect(50-2,10,100,10, BLACK);
       dsp_2.setTextColor(GREEN);
@@ -443,12 +472,35 @@ void Key_Proc_A(void)
       }
 #else
     case MOTOR_DN :
-      if(motor_mode_num >= 7) break;  // if motor working 1 cycle mode not enterence
+      if(motor_mode_num == 7) break;  // if motor working 1 cycle mode not enterence
       if(motor_mode_num == 0xFF) break; // if motor goto start pos break;
       is_encoder_working = false;
       
-      pulses_stop_pos -= 1;
-
+      if( is_motor_long_key )
+      {
+        pulses_stop_pos -= 1;
+        is_motor_dn_push = false;
+      }
+      else  // single touch
+      {
+        if( is_motor_dn_push == false) 
+        {
+          pulses_stop_pos -= 1;
+          is_motor_dn_push = true;
+          pre_motor_dn_push = millis();
+        }
+        else if( millis() - pre_motor_dn_push < 500)
+        {
+          pulses_stop_pos -= 50;
+          is_motor_dn_push = false;
+        }
+        else
+        {
+          pulses_stop_pos -= 1;
+          is_motor_dn_push = true;
+          pre_motor_dn_push = millis();
+        }
+      }
         
       dsp_2.fillRect(50-2,10,100,10, BLACK);
       dsp_2.setTextColor(GREEN);
@@ -583,21 +635,18 @@ void Key_Proc_B(void)
     if( is_encoder_working == true) break;
     if( motor_mode_num >= 14) break;
     
-    if( motor_mode_num < 7)
+    if( motor_mode_num != 7)
     {
       motor_mode_num = 7;
       pulses = 0;
-    }
-    else
-    {
-      motor_mode_num += 1;
-    }
 
-    digitalWrite(MOTOR_PORT_A, HIGH);
-    digitalWrite(MOTOR_PORT_B, LOW);
-
-    pre_encodercheck_time = millis();
-    is_encoder_working = true;
+      digitalWrite(MOTOR_PORT_A, HIGH);
+      digitalWrite(MOTOR_PORT_B, LOW);
+  
+      pre_encodercheck_time = millis();
+      is_encoder_working = true;
+    }
+    
 #endif
     break;
     
@@ -766,83 +815,19 @@ void updateMotor(void)
         digitalWrite(MOTOR_PORT_A, LOW);
         digitalWrite(MOTOR_PORT_B, LOW);
         motor_mode_num += 1;
-        pre_hold_time = millis();
+        
         is_encoder_working = false;
-      }
-      break;
-    case 8 :
-      /*
-      if( millis() - pre_hold_time > motor_stop_time * 1000)
-      {
-        motor_mode_num += 1;
-        digitalWrite(MOTOR_PORT_A, HIGH);
-        digitalWrite(MOTOR_PORT_B, LOW);
-
-        pre_encodercheck_time = millis();
-      }
-      */
-      break;
-
-    case 9 :
-      if( pulses >= pulses_stop_pos*2)  // default 16,000
-      {
-        digitalWrite(MOTOR_PORT_A, LOW);
-        digitalWrite(MOTOR_PORT_B, LOW);
-        motor_mode_num += 1;
         pre_hold_time = millis();
-       is_encoder_working = false;
       }
-      break;
-    case 10:
-    /*
-      if( millis() - pre_hold_time > motor_stop_time * 1000)
-      {
-        motor_mode_num += 1;
-        digitalWrite(MOTOR_PORT_A, HIGH);
-        digitalWrite(MOTOR_PORT_B, LOW);
-
-        pre_encodercheck_time = millis();
-      }
-      */
-      break;
-
-    case 11:
-      if( pulses >= pulses_stop_pos*3)  // default 16,000
+      else if( millis() - pre_encodercheck_time > 50)  // default 16,000
       {
         digitalWrite(MOTOR_PORT_A, LOW);
         digitalWrite(MOTOR_PORT_B, LOW);
-        motor_mode_num += 1;
-        pre_hold_time = millis();
-       is_encoder_working = false;
-      }
-      break;
-    case 12:
-      /*
-      if( millis() - pre_hold_time > motor_stop_time * 1000)
-      {
-        motor_mode_num += 1;
-        digitalWrite(MOTOR_PORT_A, HIGH);
-        digitalWrite(MOTOR_PORT_B, LOW);
-
-        pre_encodercheck_time = millis();
-      }
-      */
-      break;
-
-    case 13:
-//      if( pulses >= pulses_stop_pos*16*4 || millis() - pre_encodercheck_time > 50)  // default 16,000
-      if( millis() - pre_encodercheck_time > 50)  // default 16,000
-      {
-        digitalWrite(MOTOR_PORT_A, LOW);
-        digitalWrite(MOTOR_PORT_B, LOW);
-        motor_mode_num += 1;
+        motor_mode_num = 14;
 
         is_encoder_working = false;
         pre_hold_time = millis();
       }
-      break;
-
-    case 14: // just hold state
       break;
 
     case 15:
@@ -934,6 +919,9 @@ void readEEPROM (void)
   unsigned char temp = EEPROM.read(addr);
   pulses_stop_pos = pulses_stop_pos | temp;
 
+  addr += sizeof(signed int);
+  temp = EEPROM.read(addr);
+  
   real_temp = data[0];
   hope_temp = data[1];
   // pulses_stop_pos = data[2];
@@ -941,11 +929,13 @@ void readEEPROM (void)
   real_psi = data[4];
   hope_psi = data[5];
 
-  // set as default value
-  if( hope_temp <= 0 || hope_temp >= 60) hope_temp = 25;
-  if( pulses_stop_pos <= 0 || pulses_stop_pos >= 5000) pulses_stop_pos = 0;
-  if( motor_stop_time <= 0 || motor_stop_time >= 13) motor_stop_time = 2;
-  if( hope_psi <= 0 || hope_psi >= 922) hope_psi = 300;
+  if( temp != 0x55) // set as default value
+  {
+    hope_temp = 25;
+    pulses_stop_pos = 0;
+    motor_stop_time = 2;
+    hope_psi = 300;
+  }
 }
 
 void updateEEPROM (void)
@@ -955,7 +945,7 @@ void updateEEPROM (void)
 
   is_update_infor = false;
 
-  for (int i = 0 ; i < 50; i++) 
+  for (int i = 0 ; i < 100; i++) 
   {
     EEPROM.write(i, 0);
     delay(1);
@@ -979,4 +969,7 @@ void updateEEPROM (void)
   EEPROM.write(addr, (pulses_stop_pos >> 8) );
   addr += sizeof(signed int);
   EEPROM.write(addr, (pulses_stop_pos & 0x00FF) );
+  addr += sizeof(signed int);
+
+  EEPROM.write(addr, 0x55 );
 }
