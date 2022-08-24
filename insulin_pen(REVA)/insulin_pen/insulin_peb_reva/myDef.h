@@ -9,15 +9,18 @@
 #define LED_POWER         14
 #define LED_MOTOR         30
 #define LED_BLUETOOTH     31
-#define LED_BAT_ICO       39
-#define LED_BAT_STATE1    25
-#define LED_BAT_STATE2    15
+
+#define LED_BAT_ICO       15
+#define LED_BAT_STATE1    39
+#define LED_BAT_STATE2    25
 #define LED_BAT_STATE3    29
-#define LED_MOTOR_ICO     23
-#define LED_MOTOR_STATE1  22
-#define LED_MOTOR_STATE2  6
+
+#define LED_MOTOR_ICO     6
+#define LED_MOTOR_STATE1  23
+#define LED_MOTOR_STATE2  22
 #define LED_MOTOR_STATE3  16
 #define LED_MOTOR_STATE4  17
+
 #define LED_TEMP_DANGER   1
 #define LED_TEMP_NORMAL   0
 

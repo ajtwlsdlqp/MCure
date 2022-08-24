@@ -2,6 +2,7 @@
 #include "myFuncDef.h"
 
 #include <Wire.h>
+#include <I2C.h>
 
 int Key = 0xFF;
 unsigned long pre_key_readtime = millis();
@@ -29,13 +30,25 @@ unsigned int pulses_stop_pos = 0;
 unsigned char motor_stop_time = 1;
 unsigned char motor_mode_num = 0;
 
+unsigned char f_power_state = 0;
+
 unsigned char ch = 0;
+
+#define DEBUG_MODE    1
 void setup() {
   // put your setup code here, to run once:
-  Serial.begin(115200);   // for Debug
+#if DEBUG_MODE
+  Serial.begin(9600);   // for Debug
+#endif
   Serial1.begin(9600);    // for ble
-  Wire.begin();
-  
+
+  I2c.begin();
+  I2c.timeOut(5000);
+  I2c.pullup(true);
+
+#if DEBUG_MODE
+  Serial.println("Debug Start");
+#endif
   // motor
   pinMode(MOTOR_PORT_F, OUTPUT);
   digitalWrite(MOTOR_PORT_F, LOW);
@@ -61,22 +74,6 @@ void setup() {
   pinMode(PELTIER_FAN, OUTPUT);
   digitalWrite(PELTIER_FAN, LOW);
 
-  // touch
-  for( ch = 0; ch < 4; ch++)  // set sensitivity
-  {
-    Wire.beginTransmission(0x48);
-    Wire.write(0x39+ch);
-    Wire.write(0x38);
-    Wire.endTransmission();
-
-    delay(250);
-  }
-
-  // enable touch ch8 7 6 5 // 4 3 2 1
-  Wire.beginTransmission(0x48);
-  Wire.write(0x01);
-  Wire.write(0x0F);
-  Wire.endTransmission();
 
   pinMode(BUZZER_PWM, OUTPUT);
   noTone(BUZZER_PWM);
@@ -97,18 +94,60 @@ void setup() {
   pinMode(LED_MOTOR_STATE2, OUTPUT);
   pinMode(LED_MOTOR_STATE3, OUTPUT);
   pinMode(LED_MOTOR_STATE4, OUTPUT);
-  // pinMode(LED_TEMP_DANGER, OUTPUT);
-  // pinMode(LED_TEMP_NORMAL, OUTPUT);
+
+  digitalWrite(LED_EMERGENCY, HIGH);
+  digitalWrite(LED_POWER, HIGH);
+  digitalWrite(LED_MOTOR, HIGH);
+  digitalWrite(LED_BLUETOOTH, HIGH);
+  digitalWrite(LED_BAT_ICO, HIGH);
+  digitalWrite(LED_BAT_STATE1, HIGH);
+  digitalWrite(LED_BAT_STATE2, HIGH);
+  digitalWrite(LED_BAT_STATE3, HIGH);
+  digitalWrite(LED_MOTOR_ICO, HIGH);
+  digitalWrite(LED_MOTOR_STATE1, HIGH);
+  digitalWrite(LED_MOTOR_STATE2, HIGH);
+  digitalWrite(LED_MOTOR_STATE3, HIGH);
+  digitalWrite(LED_MOTOR_STATE4, HIGH);
+
+#if !DEBUG_MODE
+  pinMode(LED_TEMP_DANGER, OUTPUT);
+  pinMode(LED_TEMP_NORMAL, OUTPUT);
+#endif
   
   pulses = 0;
   motor_mode_num = 0;
   pre_encodercheck_time = millis();
+
+#if DEBUG_MODE
+    // touch
+  Serial.println("i2c Start");
+  I2c.scan();
+#endif
+
+  ch = I2c.write(0x24, 0x39, 0x38);
+  ch = I2c.write(0x24, 0x3A, 0x38);
+  ch = I2c.write(0x24, 0x3B, 0x38);
+  ch = I2c.write(0x24, 0x3C, 0x38);
+  ch = I2c.write(0x24, 0x3D, 0x38);
+  ch = I2c.write(0x24, 0x3E, 0x38);
+  ch = I2c.write(0x24, 0x3F, 0x38);
+  ch = I2c.write(0x24, 0x40, 0x38);
+
+  ch = I2c.write(0x24, 0x01, 0x0F);
+
+#if DEBUG_MODE
+  Serial.println("setup end");
+#endif
 }
 
 void loop() 
 {
   // put your main code here, to run repeatedly:
+  Key_Scan();
 
+  updateTemperatrue();
+  updatePSI();
+  updateMotor();
 }
 
 
@@ -144,35 +183,39 @@ void A_CHANGE()
 
 void Key_Read(void)
 {
-  unsigned char temp;
+  unsigned char temp = 0;
   static unsigned char pre_key = 0xFF;
-  
-  Wire.beginTransmission(0x48);
-  Wire.write(0x2A);
-  Wire.endTransmission();
+  unsigned char rx_buff[2] = {0, 0};
 
-  Wire.beginTransmission(0x48+1);
-  temp = Wire.read();
-  Wire.endTransmission();
+  temp = I2c.read(0x24, 0x2A, 2, rx_buff);
   
+#if DEBUG_MODE
+  Serial.print("DATA");
+  Serial.print("[0] :");
+  Serial.print(rx_buff[0]);
+  Serial.print(" [1] :");
+  Serial.println(rx_buff[1]);
+#endif
+
+
   if(pre_key == 0xFF)
   {
-    if(temp == 0){  Key = 0xFF;   }
-    else if(temp & 0x01){ Key = EMERGENCY_STOP;   }
-    else if(temp & 0x02){ Key = POWER_KEY;   }
-    else if(temp & 0x04){ Key = MOTOR_WORK;   }
-    else if(temp & 0x08){ Key = BLUETOOTH;   }
+    if(rx_buff[0] == 0){  Key = 0xFF;   }
+    else if(rx_buff[0] & 0x01){ Key = EMERGENCY_STOP;   }
+    else if(rx_buff[0] & 0x02){ Key = POWER_KEY;   }
+    else if(rx_buff[0] & 0x04){ Key = MOTOR_WORK;   }
+    else if(rx_buff[0] & 0x08){ Key = BLUETOOTH;   }
     else{ Key = 0xFF;   }
     
     pre_key = Key;// pre_key
   }
   else
   {
-    if(temp == 0){  Key = 0xFF;   }
-    else if(temp == 0x01){  Key = EMERGENCY_STOP;   }
-    else if(temp == 0x02){  Key = POWER_KEY;   }
-    else if(temp == 0x04){  Key = MOTOR_WORK;   }
-    else if(temp == 0x08){  Key = BLUETOOTH;   }
+    if(rx_buff[0] == 0){  Key = 0xFF;   }
+    else if(rx_buff[0] == 0x01){  Key = EMERGENCY_STOP;   }
+    else if(rx_buff[0] == 0x02){  Key = POWER_KEY;   }
+    else if(rx_buff[0] == 0x04){  Key = MOTOR_WORK;   }
+    else if(rx_buff[0] == 0x08){  Key = BLUETOOTH;   }
     else
     { 
       Key = pre_key;
@@ -233,19 +276,50 @@ void Key_Proc(void)
   switch(Key)
   {
     case EMERGENCY_STOP :
-
+      if( f_power_state == 0) break;
+      
     break;
 
     case POWER_KEY :
+      if( f_power_state == 0)
+      {
+        f_power_state = 1;
 
+        digitalWrite(LED_EMERGENCY, LOW);
+        digitalWrite(LED_POWER, LOW);
+        digitalWrite(LED_MOTOR, LOW);
+        digitalWrite(LED_BLUETOOTH, LOW);
+        digitalWrite(LED_BAT_ICO, LOW);
+        digitalWrite(LED_MOTOR_ICO, LOW);
+      }
+      else
+      {
+        f_power_state = 0;
+
+        digitalWrite(LED_EMERGENCY, HIGH);
+        digitalWrite(LED_POWER, HIGH);
+        digitalWrite(LED_MOTOR, HIGH);
+        digitalWrite(LED_BLUETOOTH, HIGH);
+        digitalWrite(LED_BAT_ICO, HIGH);
+        digitalWrite(LED_BAT_STATE1, HIGH);
+        digitalWrite(LED_BAT_STATE2, HIGH);
+        digitalWrite(LED_BAT_STATE3, HIGH);
+        digitalWrite(LED_MOTOR_ICO, HIGH);
+        digitalWrite(LED_MOTOR_STATE1, HIGH);
+        digitalWrite(LED_MOTOR_STATE2, HIGH);
+        digitalWrite(LED_MOTOR_STATE3, HIGH);
+        digitalWrite(LED_MOTOR_STATE4, HIGH);
+      }
     break;
 
     case MOTOR_WORK :
-
+      if( f_power_state == 0) break;
+      
     break;
 
     case BLUETOOTH :
-
+      if( f_power_state == 0) break;
+      
     break;
 
     default : break;
