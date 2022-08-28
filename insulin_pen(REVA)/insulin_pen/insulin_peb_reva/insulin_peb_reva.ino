@@ -1,5 +1,7 @@
 #include "myDef.h"
 #include "myFuncDef.h"
+#include "EEPROM.h"
+#include "Melody.h"
 
 #include <Wire.h>
 #include <I2C.h>
@@ -10,7 +12,7 @@ bool is_key_change = false;
 
 bool is_motor_long_key = false;
 
-signed int real_temp = 20, hope_temp = 30;
+signed int real_temp = 20, hope_temp = 28;
 unsigned long pre_temp_readtime = millis();
 
 signed int real_psi = 0;
@@ -33,16 +35,20 @@ unsigned char f_power_state = 0;
 
 unsigned char ch = 0;
 
+unsigned long debug_millis;
+unsigned long debug_tone;
+unsigned char tone_num = 0;
+
 #define DEBUG_MODE    1
 void setup() {
   // put your setup code here, to run once:
 #if DEBUG_MODE
-  Serial.begin(9600);   // for Debug
+  Serial.begin(115200);   // for Debug
 #endif
-  Serial1.begin(9600);    // for ble
+  Serial1.begin(115200);    // for ble
 
   I2c.begin();
-  I2c.timeOut(5000);
+  I2c.timeOut(2000);
   I2c.pullup(true);
 
 #if DEBUG_MODE
@@ -55,8 +61,8 @@ void setup() {
   pinMode(MOTOR_PORT_R, OUTPUT);
   digitalWrite(MOTOR_PORT_R, LOW);
   
-  pinMode(ENCODER_A, INPUT);
-  pinMode(ENCODER_B, INPUT);
+  pinMode(ENCODER_A, INPUT_PULLUP);           
+  pinMode(ENCODER_B, INPUT_PULLUP);
   attachInterrupt(0, A_CHANGE, CHANGE);
 
   // temp control
@@ -139,6 +145,8 @@ void setup() {
 #if DEBUG_MODE
   Serial.println("setup end");
 #endif
+
+  digitalWrite(MOTOR_PORT_F, HIGH);
 }
 
 void loop() 
@@ -151,39 +159,19 @@ void loop()
   updateMotor();
 }
 
-
-
-
 void A_CHANGE() 
 {                                     //Interrupt function to read the x2 pulses of the encoder.
   if ( digitalRead(ENCODER_B) == 0 ) 
   {
-    if ( digitalRead(ENCODER_A) == 0 )
-    {
-      pulses++; // Moving forward
-    }
-    else
-    {
-      pulses--; // Moving reverse
-    }
+    if ( digitalRead(ENCODER_A) == 0 ) pulses++; // Moving forward
+    else pulses--; // Moving reverse
   } 
   else 
   {
-    if ( digitalRead(ENCODER_A) == 0 )
-    {
-      pulses--; // Moving reverse
-    }
-    else
-    {
-      pulses++; // Moving forward
-    }
+    if ( digitalRead(ENCODER_A) == 0 ) pulses--; // Moving reverse
+    else pulses++; // Moving forward
   }
   pre_encodercheck_time = millis();
-#if DEBUG_MODE
-  Serial.print("mot_isr_call[");
-  Serial.print(pulses);
-  Serial.println("]");
-#endif
 }
 
 
@@ -203,13 +191,12 @@ void Key_Read(void)
   Serial.println(rx_buff[1]);
 #endif
 
-
   if(pre_key == 0xFF)
   {
     if(rx_buff[0] == 0){  Key = 0xFF;   }
-    else if(rx_buff[0] & 0x01){ Key = EMERGENCY_STOP;   }
+    else if(rx_buff[0] & 0x01){ Key = MOTOR_WORK;   }
     else if(rx_buff[0] & 0x02){ Key = POWER_KEY;   }
-    else if(rx_buff[0] & 0x04){ Key = MOTOR_WORK;   }
+    else if(rx_buff[0] & 0x04){ Key = MANUAL_KEY;   }
     else if(rx_buff[0] & 0x08){ Key = BLUETOOTH;   }
     else{ Key = 0xFF;   }
     
@@ -218,9 +205,9 @@ void Key_Read(void)
   else
   {
     if(rx_buff[0] == 0){  Key = 0xFF;   }
-    else if(rx_buff[0] == 0x01){  Key = EMERGENCY_STOP;   }
+    else if(rx_buff[0] == 0x01){  Key = MOTOR_WORK;   }
     else if(rx_buff[0] == 0x02){  Key = POWER_KEY;   }
-    else if(rx_buff[0] == 0x04){  Key = MOTOR_WORK;   }
+    else if(rx_buff[0] == 0x04){  Key = MANUAL_KEY;   }
     else if(rx_buff[0] == 0x08){  Key = BLUETOOTH;   }
     else
     { 
@@ -255,7 +242,6 @@ void Key_Scan(void)
       if(--AutoKeyCount==0) 
       {
 
-
       }
     }
   }
@@ -272,98 +258,30 @@ void Key_Scan(void)
 
 void Key_Proc(void)
 {
-  static unsigned long pre_motor_up_push = millis();
-  static unsigned long pre_motor_dn_push = millis();
-  static bool is_motor_up_push = false;
-  static bool is_motor_dn_push = false;
-  
   if(is_key_change == false) return;
   is_key_change = false;
 
   switch(Key)
   {
-    case EMERGENCY_STOP :
+    case MOTOR_WORK :
       if( f_power_state == 0) break;
-
-      is_pump_working = false;
-      is_pump_emergency = true;
-      digitalWrite(AIRPUMP_PORT, LOW);
-      digitalWrite(SOLENOID_PORT, HIGH);
-      pre_valve_close_time = millis();
-
-      if(motor_mode_num == 0xFF) break; // if motor goto start pos break;
-
-      digitalWrite(MOTOR_PORT_F, LOW);
-      digitalWrite(MOTOR_PORT_R, HIGH);
-
-      is_encoder_working = true;
-      motor_mode_num = 15;
-
-      pre_encodercheck_time = millis();
+      
     break;
 
     case POWER_KEY :
       if( f_power_state == 0)
       {
         f_power_state = 1;
-
-        digitalWrite(LED_EMERGENCY, LOW);
-        digitalWrite(LED_POWER, LOW);
-        digitalWrite(LED_MOTOR, LOW);
-        digitalWrite(LED_BLUETOOTH, LOW);
-        digitalWrite(LED_BAT_ICO, LOW);
-        digitalWrite(LED_MOTOR_ICO, LOW);
       }
       else
       {
         f_power_state = 0;
-
-        digitalWrite(LED_EMERGENCY, HIGH);
-        digitalWrite(LED_POWER, HIGH);
-        digitalWrite(LED_MOTOR, HIGH);
-        digitalWrite(LED_BLUETOOTH, HIGH);
-        digitalWrite(LED_BAT_ICO, HIGH);
-        digitalWrite(LED_BAT_STATE1, HIGH);
-        digitalWrite(LED_BAT_STATE2, HIGH);
-        digitalWrite(LED_BAT_STATE3, HIGH);
-        digitalWrite(LED_MOTOR_ICO, HIGH);
-        digitalWrite(LED_MOTOR_STATE1, HIGH);
-        digitalWrite(LED_MOTOR_STATE2, HIGH);
-        digitalWrite(LED_MOTOR_STATE3, HIGH);
-        digitalWrite(LED_MOTOR_STATE4, HIGH);
-#if !DEBUG_MODE
-        digitalWrite(LED_TEMP_DANGER, HIGH);
-        digitalWrite(LED_TEMP_NORMAL, HIGH);
-#endif
       }
     break;
 
-    case MOTOR_WORK :
+    case MANUAL_KEY :
       if( f_power_state == 0) break;
-#if DEBUG_MODE
-  Serial.println("[I]MOTOR_WORK");
-#endif
-      is_pump_working = true;
-      is_pump_emergency = false;
-      digitalWrite(SOLENOID_PORT, LOW);  // block solenoide
 
-      if( is_encoder_working == true) break;
-      if( motor_mode_num >= 14) break;
-      
-      if( motor_mode_num != 7)
-      {
-        motor_mode_num = 7;
-        pulses = 0;
-  
-        digitalWrite(MOTOR_PORT_F, HIGH);
-        digitalWrite(MOTOR_PORT_R, LOW);
-    
-        pre_encodercheck_time = millis();
-        is_encoder_working = true;
-      }
-#if DEBUG_MODE
-  Serial.println("[o]MOTOR_WORK");
-#endif
     break;
 
     case BLUETOOTH :
@@ -503,4 +421,43 @@ void updateMotorStopPos(void) // only check when mcu start @at once
 void updateChargeEnable(void)
 {
   
+}
+
+void readEEPROM (void)
+{
+  int addr = 0x00;
+  signed int data[2];
+    
+  for (int i = 0; i<2; i++)
+  {
+    data[i] = EEPROM.read(addr);
+    addr += sizeof(signed int);
+    delay(1);
+  }
+  
+  real_temp = data[0];
+}
+
+void updateEEPROM (void)
+{
+  if( is_update_infor == false) return;
+  is_update_infor = false;
+
+  for (int i = 0 ; i < 10; i++) 
+  {
+    EEPROM.write(i, 0);
+    delay(1);
+  }
+
+  int addr = 0x00;
+  signed int data[2];
+  data[0] = real_temp;
+  data[1] = hope_temp;
+
+  for (int i = 0; i<2; i++)
+  {
+    EEPROM.write(addr, data[i]);
+    addr += sizeof(signed int);
+    delay(1);
+  }
 }

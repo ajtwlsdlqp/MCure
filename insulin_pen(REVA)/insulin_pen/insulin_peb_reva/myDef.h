@@ -1,7 +1,7 @@
 // Define key
-#define EMERGENCY_STOP    0x01
+#define MOTOR_WORK        0x01 // EMERGENCY_STOP    0x01
 #define POWER_KEY         0x02
-#define MOTOR_WORK        0x04
+#define MANUAL_KEY        0x04
 #define BLUETOOTH         0x08
 
 // Define LED
@@ -51,7 +51,8 @@
 #define BLE_RX        19
 
 // Define Anoalg
-#define READ_TEMP     A1
+#define READ_BAT      A0
 #define READ_PSI      A2
-#define READ_MOTOR    A3
 #define READ_CHARGE   A4
+#define READ_MOTOR    A7
+#define READ_TEMP     A14
