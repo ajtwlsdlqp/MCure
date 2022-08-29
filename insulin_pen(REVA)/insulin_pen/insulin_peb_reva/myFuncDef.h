@@ -11,3 +11,5 @@ void A_CHANGE();  //Interrupt function to read the x2 pulses of the encoder.
 
 void updateEEPROM (void);
 void readEEPROM (void);
+
+void Melody_Proc(void);

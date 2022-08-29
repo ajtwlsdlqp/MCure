@@ -1,9 +1,9 @@
-#define DEBUG_MODE    1
+#define DEBUG_MODE    0
 
 #include "myDef.h"
 #include "myFuncDef.h"
 #include "EEPROM.h"
-#include "Melody.h"
+//#include "Melody.h"
 
 #include <Wire.h>
 #include <I2C.h>
@@ -19,6 +19,8 @@ unsigned char f_power_state = 0;
 unsigned char active_step;
 unsigned char working_mode;
 unsigned char flash_statae;
+unsigned char Sound_Num;
+unsigned char Sound_Update;
 
 signed int pulses = 0;
 
@@ -30,6 +32,7 @@ unsigned long pre_eeprom_time = millis();
 unsigned long pre_encodercheck_time = millis();
 unsigned long pre_motor_stop_time = millis();
 unsigned long pre_led_flash_time = millis();
+unsigned long pre_buzzer_tic = millis();
 
 // for debug
 unsigned char ch;
@@ -76,7 +79,8 @@ void setup() {
 
   pinMode(BUZZER_PWM, OUTPUT);
   noTone(BUZZER_PWM);
-
+  digitalWrite(BUZZER_PWM, LOW);
+  
   pinMode(BUZZER_POWER, OUTPUT);
   digitalWrite(BUZZER_POWER, LOW);
 
@@ -120,8 +124,8 @@ void setup() {
 
 #if DEBUG_MODE
     // touch
-  Serial.println("i2c Start");
-  I2c.scan();
+  //Serial.println("i2c Start");
+  //I2c.scan();
 #endif
 
   ch = I2c.write(0x24, 0x39, 0x38);
@@ -143,6 +147,9 @@ void setup() {
   is_target_psi_set = false;
 
   readEEPROM();
+
+  Sound_Update = 0;
+  Sound_Num = 0;
 }
 
 void loop() 
@@ -156,7 +163,8 @@ void loop()
   // active only power on
   updatePSI();
   updateMotor();
-
+  Melody_Proc();
+  
   // active when it need
   updateEEPROM();
 }
@@ -268,21 +276,34 @@ void Key_Proc(void)
       if( f_power_state == 0) break;
       if( working_mode == MODE_AUTO) break;
       active_step = STEP_MAKE_PSI;
+      Sound_Update = 2; Sound_Num = 3;
+      pre_buzzer_tic = millis();
     break;
 
     case POWER_KEY :
       if( f_power_state == 0)
       {
         f_power_state = 1;
-
         active_step = STEP_USER_INPUT;
-
         is_target_psi_set = false;
+
+        Sound_Update = 2; Sound_Num = 5;
+        pre_buzzer_tic = millis();
       }
       else
       {
-        if( active_step == STEP_USER_INPUT) f_power_state = 0;
-        else active_step = STEP_BREAK_PSI;
+        if( active_step == STEP_USER_INPUT)
+        {
+          f_power_state = 0;
+          Sound_Update = 2; Sound_Num = 1;
+          pre_buzzer_tic = millis();
+        }
+        else
+        {
+          Sound_Update = 2; Sound_Num = 4;
+          pre_buzzer_tic = millis();
+          active_step = STEP_BREAK_PSI;
+        }
       }
     break;
 
@@ -360,7 +381,12 @@ void updatePSI (void)
     default : break;
     
     case STEP_USER_INPUT : 
-      if( working_mode == MODE_AUTO) working_mode = STEP_MAKE_PSI;
+      if( working_mode == MODE_AUTO)
+      {
+        working_mode = STEP_MAKE_PSI;
+        Sound_Update = 2; Sound_Num = 3;
+        pre_buzzer_tic = millis();
+      }
       is_target_psi_set = false;
       break;
 
@@ -391,6 +417,9 @@ void updatePSI (void)
       {
         digitalWrite(SOLENOID_PORT, LOW);  // block solenoide
         f_power_state = 0;
+
+        Sound_Update = 2; Sound_Num = 1;
+        pre_buzzer_tic = millis();
       }
       break;
   }
@@ -411,6 +440,9 @@ void updateMotor(void)
 
       if( is_target_psi_set == true)
       {
+        Sound_Update = 2; Sound_Num = 3;
+        pre_buzzer_tic = millis();
+        
         pre_motor_stop_time = millis();
         active_step = STEP_MOTOR_MOVE;
       }
@@ -423,6 +455,9 @@ void updateMotor(void)
         active_step = STEP_MOTOR_WAITE;
         pre_encodercheck_time = millis();
         pre_motor_stop_time = millis();
+
+        Sound_Update = 2; Sound_Num = 3;
+        pre_buzzer_tic = millis();
       }
       break;
       
@@ -443,6 +478,9 @@ void updateMotor(void)
       if( millis() - pre_motor_stop_time > 10 * 1000)
       {
         active_step = STEP_BREAK_PSI;
+
+        Sound_Update = 2; Sound_Num = 3;
+        pre_buzzer_tic = millis();
       }
       break;
       
@@ -639,4 +677,118 @@ void updateEEPROM (void)
     addr += sizeof(signed int);
     delay(1);
   }
+}
+
+void Melody_Proc(void)
+{
+  static unsigned char Val = 0;
+  
+  if (Sound_Update == 0) return;
+  if( millis() - pre_buzzer_tic < 70) return;
+  pre_buzzer_tic = millis();
+
+  if(Sound_Update == 2)
+  {
+    Val = 0;
+    Sound_Update = 1;
+  }
+  Val += 1;
+
+  if (Sound_Num == 1) //Goodbye
+  {
+    switch (Val)
+    {
+      case 1: 
+        noTone(BUZZER_PWM);
+        digitalWrite(BUZZER_PWM, LOW);
+        digitalWrite(BUZZER_POWER, HIGH); break;
+      case 4: tone(BUZZER_PWM, 3300); break;
+      case 6: tone(BUZZER_PWM, 2500); break;
+      case 8: tone(BUZZER_PWM, 2000); break;
+      case 10: tone(BUZZER_PWM, 1600); break;
+      case 12: tone(BUZZER_PWM, 1200); break;
+      case 14: digitalWrite(BUZZER_POWER, LOW); break;
+      case 16:
+        Sound_Update = 0; Val = 0;
+        noTone(BUZZER_PWM);
+        digitalWrite(BUZZER_PWM, LOW);
+        break;
+    }
+  }
+  else if (Sound_Num == 2) //Beep
+  {
+    switch (Val)
+    {
+      case 1: 
+        noTone(BUZZER_PWM);
+        digitalWrite(BUZZER_PWM, LOW);
+        digitalWrite(BUZZER_POWER, HIGH); break;
+      case 4: tone(BUZZER_PWM, 2000); break; //PWM ON At 2KHz
+      case 6: digitalWrite(BUZZER_POWER, LOW);
+      case 8:
+        Sound_Update = 0; Val = 0;
+        noTone(BUZZER_PWM);
+        digitalWrite(BUZZER_PWM, LOW);
+        break;
+    }
+  }
+  else if (Sound_Num == 3) //On_Beep
+  {
+    switch (Val)
+    {
+      case 1: 
+        noTone(BUZZER_PWM);
+        digitalWrite(BUZZER_PWM, LOW);
+        digitalWrite(BUZZER_POWER, HIGH); break;
+      case 4: tone(BUZZER_PWM, 1600); break; //PWM ON At1.666KHz
+      case 6: tone(BUZZER_PWM, 2500); break; //PWM Change 2.5KHz
+      case 8: digitalWrite(BUZZER_POWER, LOW); break;
+      case 10:
+        Sound_Update = 0; Val = 0;
+        noTone(BUZZER_PWM);
+        digitalWrite(BUZZER_PWM, LOW);
+        break;
+    }
+  }
+  else if (Sound_Num == 4) //off_Beep
+  {
+    switch (Val)
+    {
+      case 1: 
+        noTone(BUZZER_PWM);
+        digitalWrite(BUZZER_PWM, LOW);
+        digitalWrite(BUZZER_POWER, LOW);
+        break;
+      case 4: tone(BUZZER_PWM, 2500); break; //PWM ON At 2.5KHz
+      case 6: tone(BUZZER_PWM, 1600); break; //PWM Change 1.666KHz
+      case 8: digitalWrite(BUZZER_POWER, LOW); break;
+      case 10: 
+        Sound_Update = 0; Val = 0;
+        noTone(BUZZER_PWM);
+        digitalWrite(BUZZER_PWM, LOW);
+        break;
+    }
+  }
+  else if (Sound_Num == 5) //Beep
+  {
+    switch (Val)
+    {
+      case 1: 
+        noTone(BUZZER_PWM);
+        digitalWrite(BUZZER_PWM, LOW);
+        digitalWrite(BUZZER_POWER, HIGH); break;
+      case 4: tone(BUZZER_PWM, 1200); break;
+      case 6: tone(BUZZER_PWM, 1600); break;
+      case 8: tone(BUZZER_PWM, 2000); break;
+      case 10: tone(BUZZER_PWM, 2500); break;
+      case 12: tone(BUZZER_PWM, 3300); break;
+      case 14: digitalWrite(BUZZER_POWER, LOW); break;
+      case 16:
+        Sound_Update = 0; Val = 0;
+        noTone(BUZZER_PWM);
+        digitalWrite(BUZZER_PWM, LOW);
+        break;
+    }
+  }
+
 }
