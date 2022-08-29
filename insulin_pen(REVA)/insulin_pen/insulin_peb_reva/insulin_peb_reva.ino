@@ -422,11 +422,13 @@ void updateMotor(void)
         digitalWrite( MOTOR_PORT_F, HIGH);
         active_step = STEP_MOTOR_WAITE;
         pre_encodercheck_time = millis();
+        pre_motor_stop_time = millis();
       }
       break;
       
     case STEP_MOTOR_WAITE :
-      if( millis() - pre_motor_stop_time > 100) // if encoder update is not working
+      if( millis() - pre_motor_stop_time > 300 &&
+          millis() - pre_encodercheck_time > 100) // if encoder update is not working
       {
         digitalWrite(MOTOR_PORT_F, LOW);
         digitalWrite(MOTOR_PORT_R, LOW);
