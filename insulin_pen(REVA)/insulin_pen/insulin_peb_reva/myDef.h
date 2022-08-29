@@ -56,3 +56,26 @@
 #define READ_CHARGE   A4
 #define READ_MOTOR    A7
 #define READ_TEMP     A14
+
+typedef enum
+{
+  MODE_AUTO = 1, 
+  MODE_MANUAL,
+}working_mode_list;
+
+typedef enum
+{
+  STEP_USER_INPUT = 0,  // power on
+  
+  STEP_MAKE_PSI,        // step 1
+  
+  STEP_MOTOR_MOVE,      // 
+  STEP_MOTOR_WAITE,     // step 2
+  
+  STEP_MOTOR_HOLD,      // step 3
+  
+  STEP_BREAK_PSI,       // step 4
+  
+  STEP_WORKING_END      // power off
+  
+}active_step_list;
