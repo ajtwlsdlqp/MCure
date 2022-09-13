@@ -41,6 +41,8 @@ void setup() {
   // put your setup code here, to run once:
 #if DEBUG_MODE
   Serial.begin(115200);   // for Debug
+#else
+  Serial.end();
 #endif
   Serial1.begin(115200);    // for ble
 
@@ -73,8 +75,8 @@ void setup() {
   pinMode(SOLENOID_PORT, OUTPUT);
   digitalWrite(SOLENOID_PORT, LOW);
 
-  pinMode(PELTIER_FAN, OUTPUT);
-  digitalWrite(PELTIER_FAN, LOW);
+  pinMode(AIRPUMP_PORT, OUTPUT);
+  digitalWrite(AIRPUMP_PORT, LOW);
 
 
   pinMode(BUZZER_PWM, OUTPUT);
@@ -292,13 +294,20 @@ void Key_Proc(void)
       }
       else
       {
-        if( active_step == STEP_USER_INPUT)
+        if( active_step == STEP_USER_INPUT) // user off function
         {
           f_power_state = 0;
+
+          digitalWrite(MOTOR_PORT_F, LOW);
+          digitalWrite(MOTOR_PORT_R, LOW);
+        
+          digitalWrite(SOLENOID_PORT, LOW);
+          digitalWrite(AIRPUMP_PORT, LOW);
+        
           Sound_Update = 2; Sound_Num = 1;
           pre_buzzer_tic = millis();
         }
-        else
+        else                                // emergency off function
         {
           Sound_Update = 2; Sound_Num = 4;
           pre_buzzer_tic = millis();
@@ -416,6 +425,8 @@ void updatePSI (void)
       if( millis() - pre_valve_close_time > 2 * 1000)
       {
         digitalWrite(SOLENOID_PORT, LOW);  // block solenoide
+        digitalWrite(AIRPUMP_PORT, LOW);
+        
         f_power_state = 0;
 
         Sound_Update = 2; Sound_Num = 1;
