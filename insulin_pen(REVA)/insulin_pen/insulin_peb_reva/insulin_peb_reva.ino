@@ -520,10 +520,21 @@ void updateLED (void)
     digitalWrite(LED_MOTOR_STATE2, HIGH);
     digitalWrite(LED_MOTOR_STATE3, HIGH);
     digitalWrite(LED_MOTOR_STATE4, HIGH);
-  #if !DEBUG_MODE
-    digitalWrite(LED_TEMP_DANGER, HIGH);
-    digitalWrite(LED_TEMP_NORMAL, HIGH);
-  #endif
+
+    if( f_peltier_state == true)
+    {
+      #if !DEBUG_MODE
+      digitalWrite(LED_TEMP_DANGER, LOW);
+      digitalWrite(LED_TEMP_NORMAL, HIGH);
+      #endif
+    }
+    else
+    {
+      #if !DEBUG_MODE
+      digitalWrite(LED_TEMP_DANGER, HIGH);
+      digitalWrite(LED_TEMP_NORMAL, LOW);
+      #endif
+    }
   }
   else
   {
