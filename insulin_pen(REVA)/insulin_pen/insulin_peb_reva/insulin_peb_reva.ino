@@ -1,4 +1,5 @@
 #define DEBUG_MODE    0
+#define MOKUP_MODE    1
 
 #include "myDef.h"
 #include "myFuncDef.h"
@@ -33,7 +34,10 @@ unsigned long pre_encodercheck_time = millis();
 unsigned long pre_motor_stop_time = millis();
 unsigned long pre_led_flash_time = millis();
 unsigned long pre_buzzer_tic = millis();
+unsigned long pre_user_motor_worktime = millis();
 
+unsigned char mokup_motor_run_state;
+unsigned char mokup_motor_stop_state;
 // for debug
 unsigned char ch;
 
@@ -130,14 +134,14 @@ void setup() {
   //I2c.scan();
 #endif
 
-  ch = I2c.write(0x24, 0x39, 0x38);
-  ch = I2c.write(0x24, 0x3A, 0x38);
-  ch = I2c.write(0x24, 0x3B, 0x38);
-  ch = I2c.write(0x24, 0x3C, 0x38);
-  ch = I2c.write(0x24, 0x3D, 0x38);
-  ch = I2c.write(0x24, 0x3E, 0x38);
-  ch = I2c.write(0x24, 0x3F, 0x38);
-  ch = I2c.write(0x24, 0x40, 0x38);
+  ch = I2c.write(0x24, 0x39, 0x28);
+  ch = I2c.write(0x24, 0x3A, 0x28);
+  ch = I2c.write(0x24, 0x3B, 0x28);
+  ch = I2c.write(0x24, 0x3C, 0x28);
+  ch = I2c.write(0x24, 0x3D, 0x28);
+  ch = I2c.write(0x24, 0x3E, 0x28);
+  ch = I2c.write(0x24, 0x3F, 0x28);
+  ch = I2c.write(0x24, 0x40, 0x28);
 
   ch = I2c.write(0x24, 0x01, 0x0F);
 
@@ -149,6 +153,10 @@ void setup() {
   is_target_psi_set = false;
 
   readEEPROM();
+
+#if MOKUP_MODE  // fit to mode manual
+  working_mode = MODE_MANUAL;
+#endif
 
   Sound_Update = 0;
   Sound_Num = 0;
@@ -205,7 +213,17 @@ void Key_Read(void)
 
   if(pre_key == 0xFF)
   {
-    if(rx_buff[0] == 0){  Key = 0xFF;   }
+    if(rx_buff[0] == 0)
+    {  
+      Key = 0xFF;
+
+      if( f_power_state == 1 && mokup_motor_run_state != 0)
+      {
+        mokup_motor_run_state = 0;
+        digitalWrite(MOTOR_PORT_F, LOW);
+        digitalWrite(MOTOR_PORT_R, LOW);
+      }
+    }
     else if(rx_buff[0] & 0x01){ Key = MOTOR_WORK;   }
     else if(rx_buff[0] & 0x02){ Key = POWER_KEY;   }
     else if(rx_buff[0] & 0x04){ Key = MANUAL_KEY;   }
@@ -236,7 +254,7 @@ void Key_Scan(void)
   static unsigned char f_PressedKey = 0;
   static unsigned char PrevKey = 0xFF;
   
-  if( millis() - pre_key_readtime < 100) return;
+  if( millis() - pre_key_readtime < 50) return;
   pre_key_readtime = millis();
       
   Key_Read();             // update Key value
@@ -247,13 +265,19 @@ void Key_Scan(void)
     {   
       is_key_change = 1;
       f_PressedKey = 1;
-      AutoKeyCount = 15;
+      AutoKeyCount = 5;
     }
     else 
     {         // Hold - Pressed Key
       if(--AutoKeyCount==0) 
       {
-
+#if MOKUP_MODE
+        if( Key == MANUAL_KEY || Key == BLUETOOTH  ) 
+        {
+          is_key_change = 1;
+          AutoKeyCount = 1; // about 0.15s
+        }
+#endif
       }
     }
   }
@@ -307,11 +331,15 @@ void Key_Proc(void)
           Sound_Update = 2; Sound_Num = 1;
           pre_buzzer_tic = millis();
         }
-        else                                // emergency off function
+        else if(active_step != STEP_EMERGENCY_STOP)                                // emergency off function
         {
-          Sound_Update = 2; Sound_Num = 4;
+          digitalWrite(AIRPUMP_PORT, LOW);  // de-active pump
+          digitalWrite(SOLENOID_PORT, HIGH);  // block solenoide
+          pre_valve_close_time = millis();
+
+          Sound_Update = 2; Sound_Num = 1;
           pre_buzzer_tic = millis();
-          active_step = STEP_BREAK_PSI;
+          active_step = STEP_EMERGENCY_STOP;
         }
       }
     break;
@@ -319,20 +347,52 @@ void Key_Proc(void)
     case MANUAL_KEY :
       if( f_power_state == 0) break;
 
-      if( working_mode == MODE_AUTO) working_mode = MODE_MANUAL;
-      else working_mode = MODE_AUTO;
+      if( mokup_motor_run_state != 1)
+      {
+        mokup_motor_run_state = 1;
+        pre_encodercheck_time = millis();
+        pre_user_motor_worktime = millis();
+        digitalWrite(MOTOR_PORT_F, HIGH);
+        digitalWrite(MOTOR_PORT_R, LOW);
+      }
+      else if( millis() - pre_encodercheck_time > 100) // if encoder update is not working
+      {
+        digitalWrite(MOTOR_PORT_F, LOW);
+        digitalWrite(MOTOR_PORT_R, LOW);
+        pulses = 0;
+      }
+      else
+      {
+        pre_user_motor_worktime = millis();
+      }
 
-      is_update_infor = true;
     break;
 
     case BLUETOOTH :
       if( f_power_state == 0) break;
-      // TODO
-    break;
+      if( mokup_motor_run_state != 2)
+      {
+        mokup_motor_run_state = 2;
+        pre_encodercheck_time = millis();
 
+        digitalWrite(MOTOR_PORT_F, LOW);
+        digitalWrite(MOTOR_PORT_R, HIGH);
+        pre_user_motor_worktime = millis();
+      }
+      else if( millis() - pre_encodercheck_time > 100) // if encoder update is not working
+      {
+        digitalWrite(MOTOR_PORT_F, LOW);
+        digitalWrite(MOTOR_PORT_R, LOW);
+        pulses = 0;
+      }
+      else
+      {
+        pre_user_motor_worktime = millis();
+      }
+    break;
+    
     default : break;
   }
-  
 }
 
 /*
@@ -403,7 +463,8 @@ void updatePSI (void)
     case STEP_MOTOR_MOVE :
     case STEP_MOTOR_WAITE :
     case STEP_MOTOR_HOLD :
-      if( analogRead(READ_PSI) < 220)
+      // if( analogRead(READ_PSI) < 220) -> MOKUP REVA hard to get 110mmhg 
+      if( analogRead(READ_PSI) < 198) // 90mmhg
       {
         digitalWrite(AIRPUMP_PORT, HIGH);  // active pump
       }
@@ -433,6 +494,15 @@ void updatePSI (void)
         pre_buzzer_tic = millis();
       }
       break;
+
+    case STEP_EMERGENCY_STOP :
+      if( millis() - pre_valve_close_time > 2 * 1000)
+      {
+        digitalWrite(SOLENOID_PORT, LOW);  // block solenoide
+        digitalWrite(AIRPUMP_PORT, LOW);
+        active_step = STEP_USER_INPUT;
+      }
+      break;
   }
 }
 
@@ -443,8 +513,10 @@ void updateMotor(void)
   switch( active_step)
   {
     default : break;
-    
+
     case STEP_USER_INPUT : 
+      break;
+      
     case STEP_MAKE_PSI :
       digitalWrite( MOTOR_PORT_F, LOW);
       digitalWrite( MOTOR_PORT_R, LOW);
@@ -549,14 +621,16 @@ void updateLED (void)
     if( millis() - pre_led_flash_time > 300)  // func for flash 
     {
       pre_led_flash_time = millis();
-    
+#if MOKUP_MODE
+      digitalWrite(LED_BLUETOOTH, LOW);
+#else
       if( Serial1.available() > 0) digitalWrite(LED_BLUETOOTH, LOW);
       else
       {
         if( flash_statae == 0) digitalWrite(LED_BLUETOOTH, LOW);
         else digitalWrite(LED_BLUETOOTH, HIGH);
       }
-
+#endif
       
       if( analogRead(READ_CHARGE) > 512) 
       {
