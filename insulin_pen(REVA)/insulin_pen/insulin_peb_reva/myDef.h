@@ -76,6 +76,10 @@ typedef enum
   
   STEP_BREAK_PSI,       // step 4
   
-  STEP_WORKING_END      // power off
+  STEP_WORKING_END,      // power off
+
+  // Emergency
+
+  STEP_EMERGENCY_STOP
   
 }active_step_list;
