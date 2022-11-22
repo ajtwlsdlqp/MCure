@@ -36,6 +36,9 @@ unsigned long pre_led_flash_time = millis();
 unsigned long pre_buzzer_tic = millis();
 unsigned long pre_user_motor_worktime = millis();
 
+unsigned long pre_touch_stabil_time = millis();
+unsigned char is_touch_enable;
+
 unsigned char mokup_motor_run_state;
 unsigned char mokup_motor_stop_state;
 // for debug
@@ -63,6 +66,9 @@ void setup() {
 
   pinMode(MOTOR_PORT_R, OUTPUT);
   digitalWrite(MOTOR_PORT_R, LOW);
+
+  pinMode(MOTOR_SLEEP, OUTPUT);
+  digitalWrite(MOTOR_SLEEP, LOW);
   
   pinMode(ENCODER_A, INPUT_PULLUP);           
   pinMode(ENCODER_B, INPUT_PULLUP);
@@ -128,22 +134,7 @@ void setup() {
   pulses = 0;
   pre_encodercheck_time = millis();
 
-#if DEBUG_MODE
-    // touch
-  //Serial.println("i2c Start");
-  //I2c.scan();
-#endif
 
-  ch = I2c.write(0x24, 0x39, 0x28);
-  ch = I2c.write(0x24, 0x3A, 0x28);
-  ch = I2c.write(0x24, 0x3B, 0x28);
-  ch = I2c.write(0x24, 0x3C, 0x28);
-  ch = I2c.write(0x24, 0x3D, 0x28);
-  ch = I2c.write(0x24, 0x3E, 0x28);
-  ch = I2c.write(0x24, 0x3F, 0x28);
-  ch = I2c.write(0x24, 0x40, 0x28);
-
-  ch = I2c.write(0x24, 0x01, 0x0F);
 
 #if DEBUG_MODE
   Serial.println("setup end");
@@ -158,14 +149,17 @@ void setup() {
   working_mode = MODE_MANUAL;
 #endif
 
-  Sound_Update = 0;
-  Sound_Num = 0;
+  Sound_Update = 2;
+  Sound_Num = 3;
+  is_touch_enable = 0;
+
 }
 
 void loop() 
 {
   // put your main code here, to run repeatedly:
   // active allways
+
   Key_Scan();
   updateTemperatrue();    
   updateLED();
@@ -310,6 +304,7 @@ void Key_Proc(void)
       if( f_power_state == 0)
       {
         f_power_state = 1;
+        digitalWrite(MOTOR_SLEEP, HIGH); // wake up motor drive
         active_step = STEP_USER_INPUT;
         is_target_psi_set = false;
 
@@ -327,6 +322,8 @@ void Key_Proc(void)
         
           digitalWrite(SOLENOID_PORT, LOW);
           digitalWrite(AIRPUMP_PORT, LOW);
+
+          digitalWrite(MOTOR_SLEEP, LOW); // when power off -> enable sleep motor
         
           Sound_Update = 2; Sound_Num = 1;
           pre_buzzer_tic = millis();
@@ -487,7 +484,8 @@ void updatePSI (void)
       {
         digitalWrite(SOLENOID_PORT, LOW);  // block solenoide
         digitalWrite(AIRPUMP_PORT, LOW);
-        
+        digitalWrite(MOTOR_SLEEP, LOW); // when power off -> enable sleep motor
+
         f_power_state = 0;
 
         Sound_Update = 2; Sound_Num = 1;
@@ -843,6 +841,12 @@ void Melody_Proc(void)
         Sound_Update = 0; Val = 0;
         noTone(BUZZER_PWM);
         digitalWrite(BUZZER_PWM, LOW);
+
+        if( is_touch_enable == 0)
+        {
+          is_touch_enable = 1;
+          enableTouch();          
+        }
         break;
     }
   }
@@ -887,4 +891,40 @@ void Melody_Proc(void)
     }
   }
 
+}
+
+void enableTouch (void)
+{
+#if DEBUG_MODE
+    // touch
+  //Serial.println("i2c Start");
+  //I2c.scan();
+#endif
+
+  I2c.write(0x24, 0x39, 0x28);
+  I2c.write(0x24, 0x3A, 0x28);
+  I2c.write(0x24, 0x3B, 0x28);
+  I2c.write(0x24, 0x3C, 0x28);
+  I2c.write(0x24, 0x3D, 0x28);
+  I2c.write(0x24, 0x3E, 0x28);
+  I2c.write(0x24, 0x3F, 0x28);
+  I2c.write(0x24, 0x40, 0x28);
+
+  delay(100);
+
+  I2c.write(0x24, 0x01, 0x0F);
+}
+
+void disableTouch (void)
+{
+  I2c.write(0x24, 0x01, 0x00);
+}
+
+void resetTouch (void)
+{
+  /*
+  response_off_ctrl / response_ctrl / bf_mode / software_rst
+        0 1 0     /     0 1 1     /   0     /       1
+  */
+  I2c.write(0x24, 0x36, 0x4D);
 }
