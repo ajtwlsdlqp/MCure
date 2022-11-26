@@ -146,12 +146,12 @@ void setup() {
 
   readEEPROM();
 
-  working_mode = MODE_AUTO; // auto mode is default
-
+  //working_mode = MODE_AUTO; // auto mode is default
+  working_mode = MODE_MANUAL;
+  
   Sound_Update = 2;
   Sound_Num = 3;
   is_touch_enable = 0;
-
 }
 
 void loop() 
@@ -239,7 +239,8 @@ void Key_Scan(void)
   static unsigned char f_PressedKey = 0;
   static unsigned char PrevKey = 0xFF;
   
-  if( millis() - pre_key_readtime < 2) return;
+  if( (f_power_state == 0) && (millis() - pre_key_readtime < 20) )return;
+  if( (f_power_state == 1) && (millis() - pre_key_readtime <  8) )return;
   pre_key_readtime = millis();
       
   Key_Read();             // update Key value
@@ -250,13 +251,13 @@ void Key_Scan(void)
     {   
       is_key_change = 1;
       f_PressedKey = 1;
-      AutoKeyCount = 5;
+      AutoKeyCount = 1;
     }
     else 
     {         // Hold - Pressed Key
       if(--AutoKeyCount==0) 
       {
-        if( Key == LED_MTF || Key == LED_MTR  ) 
+        if( Key == MOTOR_R || Key == MOTOR_F  ) 
         {
           is_key_change = 1;
           AutoKeyCount = 1; // about 0.15s
@@ -288,7 +289,8 @@ void Key_Proc(void)
         digitalWrite(MOTOR_SLEEP, HIGH); // wake up motor drive
         active_step = STEP_USER_INPUT;
         is_target_psi_set = false;
-
+        
+        working_mode = MODE_MANUAL;
         Sound_Update = 2; Sound_Num = 5;
         pre_buzzer_tic = millis();
       }
@@ -320,7 +322,7 @@ void Key_Proc(void)
           active_step = STEP_EMERGENCY_STOP;
         }
       }
-    break;
+      break;
 
     case MOTOR_F :
       if( f_power_state == 0) break;
@@ -333,7 +335,7 @@ void Key_Proc(void)
         digitalWrite(MOTOR_PORT_F, HIGH);
         digitalWrite(MOTOR_PORT_R, LOW);
       }
-      else if( millis() - pre_encodercheck_time > 100) // if encoder update is not working
+      else if( millis() - pre_encodercheck_time > 8) // if encoder update is not working
       {
         digitalWrite(MOTOR_PORT_F, LOW);
         digitalWrite(MOTOR_PORT_R, LOW);
@@ -348,6 +350,7 @@ void Key_Proc(void)
 
     case MOTOR_R :
       if( f_power_state == 0) break;
+      
       if( mokup_motor_run_state != 2)
       {
         mokup_motor_run_state = 2;
@@ -357,7 +360,7 @@ void Key_Proc(void)
         digitalWrite(MOTOR_PORT_R, HIGH);
         pre_user_motor_worktime = millis();
       }
-      else if( millis() - pre_encodercheck_time > 100) // if encoder update is not working
+      else if( millis() - pre_encodercheck_time > 8) // if encoder update is not working
       {
         digitalWrite(MOTOR_PORT_F, LOW);
         digitalWrite(MOTOR_PORT_R, LOW);
@@ -379,8 +382,11 @@ void Key_Proc(void)
       else // turn off ble
       {
         f_ble_state = 0;
-          digitalWrite(BLE_UART, HIGH);
+        digitalWrite(BLE_UART, HIGH);
       }
+
+      Sound_Update = 2; Sound_Num = 3;
+      pre_buzzer_tic = millis();
       break;
     
     default : break;
@@ -400,7 +406,7 @@ void updateTemperatrue (void)
 {
   unsigned int real_temp = 1024;
   
-  if( millis() - pre_temp_readtime < 200) return;
+  if( millis() - pre_temp_readtime < 50) return;
   pre_temp_readtime = millis();
   
   real_temp = analogRead(READ_TEMP);
@@ -434,7 +440,7 @@ void updatePSI (void)
 {
   if( f_power_state == 0) return;
   
-  if( millis() - pre_psi_readtime < 50) return;
+  if( millis() - pre_psi_readtime < 12) return;
   pre_psi_readtime = millis();
 
   switch( active_step)
@@ -444,7 +450,7 @@ void updatePSI (void)
     case STEP_USER_INPUT : 
       if( working_mode == MODE_AUTO)
       {
-        working_mode = STEP_MAKE_PSI;
+        active_step = STEP_MAKE_PSI;
         Sound_Update = 2; Sound_Num = 3;
         pre_buzzer_tic = millis();
       }
@@ -475,7 +481,7 @@ void updatePSI (void)
       break;
 
     case STEP_WORKING_END :
-      if( millis() - pre_valve_close_time > 2 * 1000)
+      if( millis() - pre_valve_close_time > 2 * 100)
       {
         digitalWrite(SOLENOID_PORT, LOW);  // block solenoide
         digitalWrite(AIRPUMP_PORT, LOW);
@@ -483,17 +489,35 @@ void updatePSI (void)
 
         f_power_state = 0;
 
+        digitalWrite(MOTOR_PORT_F, LOW);
+        digitalWrite(MOTOR_PORT_R, LOW);
+      
+        digitalWrite(SOLENOID_PORT, LOW);
+        digitalWrite(AIRPUMP_PORT, LOW);
+
         Sound_Update = 2; Sound_Num = 1;
         pre_buzzer_tic = millis();
       }
       break;
 
     case STEP_EMERGENCY_STOP :
-      if( millis() - pre_valve_close_time > 2 * 1000)
+      if( millis() - pre_valve_close_time > 2 * 125)
       {
         digitalWrite(SOLENOID_PORT, LOW);  // block solenoide
         digitalWrite(AIRPUMP_PORT, LOW);
-        active_step = STEP_USER_INPUT;
+
+        f_power_state = 0;
+
+        digitalWrite(MOTOR_PORT_F, LOW);
+        digitalWrite(MOTOR_PORT_R, LOW);
+      
+        digitalWrite(SOLENOID_PORT, LOW);
+        digitalWrite(AIRPUMP_PORT, LOW);
+
+        digitalWrite(MOTOR_SLEEP, LOW); // when power off -> enable sleep motor
+      
+        //Sound_Update = 2; Sound_Num = 1;
+        //pre_buzzer_tic = millis();
       }
       break;
   }
@@ -511,8 +535,8 @@ void updateMotor(void)
       break;
       
     case STEP_MAKE_PSI :
-      digitalWrite( MOTOR_PORT_F, LOW);
-      digitalWrite( MOTOR_PORT_R, LOW);
+      //digitalWrite( MOTOR_PORT_F, LOW);
+      //digitalWrite( MOTOR_PORT_R, LOW);
 
       if( is_target_psi_set == true)
       {
@@ -525,7 +549,7 @@ void updateMotor(void)
       break;
     
     case STEP_MOTOR_MOVE :
-      if( millis() - pre_motor_stop_time > 300)
+      if( millis() - pre_motor_stop_time > 20)
       {
         digitalWrite( MOTOR_PORT_F, HIGH);
         active_step = STEP_MOTOR_WAITE;
@@ -538,8 +562,8 @@ void updateMotor(void)
       break;
       
     case STEP_MOTOR_WAITE :
-      if( millis() - pre_motor_stop_time > 300 &&
-          millis() - pre_encodercheck_time > 100) // if encoder update is not working
+      if( millis() - pre_motor_stop_time > 20 &&
+          millis() - pre_encodercheck_time > 8) // if encoder update is not working
       {
         digitalWrite(MOTOR_PORT_F, LOW);
         digitalWrite(MOTOR_PORT_R, LOW);
@@ -551,7 +575,7 @@ void updateMotor(void)
       break;
       
     case STEP_MOTOR_HOLD :
-      if( millis() - pre_motor_stop_time > 10 * 1000)
+      if( millis() - pre_motor_stop_time > 5 * 125)
       {
         active_step = STEP_BREAK_PSI;
 
@@ -571,11 +595,11 @@ void updateMotor(void)
 void updateLED (void)
 {
   static uint8_t led_timing = 0;
-//  if( millis() - pre_led_update_time < 10) return;
-//  pre_led_update_time = millis();
+  //if( millis() - pre_led_update_time < 1) return;
+  //pre_led_update_time = millis();
 
   if( led_timing >= 4) led_timing = 0;
-//  ledOffAll();
+  if( f_power_state == 0) ledOffAll();
 
   switch( led_timing)
   {
@@ -703,8 +727,8 @@ void updateLED (void)
       }
       break;
   }
-
-  if( millis() - pre_led_flash_time > 300)  // func for flash 
+  // 50ms -> 400ms
+  if( millis() - pre_led_flash_time > 50)  // func for flash 
   {
     pre_led_flash_time = millis();
 
@@ -780,7 +804,7 @@ void Melody_Proc(void)
   static unsigned char Val = 0;
   
   if (Sound_Update == 0) return;
-  if( millis() - pre_buzzer_tic < 10) return;
+  if( millis() - pre_buzzer_tic < 8) return;
   pre_buzzer_tic = millis();
 
   if(Sound_Update == 2)
@@ -798,11 +822,11 @@ void Melody_Proc(void)
         noTone(BUZZER_PWM);
         digitalWrite(BUZZER_PWM, LOW);
         digitalWrite(BUZZER_POWER, HIGH); break;
-      case 3: tone(BUZZER_PWM, 3300); break;
-      case 5: tone(BUZZER_PWM, 2500); break;
-      case 7: tone(BUZZER_PWM, 2000); break;
-      case 9: tone(BUZZER_PWM, 1600); break;
-      case 11: tone(BUZZER_PWM, 1200); break;
+      case 3: tone(BUZZER_PWM, 6600); break;
+      case 5: tone(BUZZER_PWM, 5000); break;
+      case 7: tone(BUZZER_PWM, 4000); break;
+      case 9: tone(BUZZER_PWM, 3200); break;
+      case 11: tone(BUZZER_PWM, 2400); break;
       case 13: digitalWrite(BUZZER_POWER, LOW); break;
       case 14:
         Sound_Update = 0; Val = 0;
@@ -819,7 +843,7 @@ void Melody_Proc(void)
         noTone(BUZZER_PWM);
         digitalWrite(BUZZER_PWM, LOW);
         digitalWrite(BUZZER_POWER, HIGH); break;
-      case 4: tone(BUZZER_PWM, 2000); break; //PWM ON At 2KHz
+      case 4: tone(BUZZER_PWM, 4000); break; //PWM ON At 2KHz
       case 6: digitalWrite(BUZZER_POWER, LOW);
       case 8:
         Sound_Update = 0; Val = 0;
@@ -835,9 +859,10 @@ void Melody_Proc(void)
       case 1: 
         noTone(BUZZER_PWM);
         digitalWrite(BUZZER_PWM, LOW);
-        digitalWrite(BUZZER_POWER, HIGH); break;
-      case 3: tone(BUZZER_PWM, 1600); break; //PWM ON At1.666KHz
-      case 5: tone(BUZZER_PWM, 2500); break; //PWM Change 2.5KHz
+        digitalWrite(BUZZER_POWER, HIGH); 
+        break;
+      case 3: tone(BUZZER_PWM, 3200); break; //PWM ON At1.666KHz
+      case 5: tone(BUZZER_PWM, 5000); break; //PWM Change 2.5KHz
       case 7: digitalWrite(BUZZER_POWER, LOW); break;
       case 8:
         Sound_Update = 0; Val = 0;
@@ -861,8 +886,8 @@ void Melody_Proc(void)
         digitalWrite(BUZZER_PWM, LOW);
         digitalWrite(BUZZER_POWER, LOW);
         break;
-      case 3: tone(BUZZER_PWM, 2500); break; //PWM ON At 2.5KHz
-      case 5: tone(BUZZER_PWM, 1600); break; //PWM Change 1.666KHz
+      case 3: tone(BUZZER_PWM, 5000); break; //PWM ON At 2.5KHz
+      case 5: tone(BUZZER_PWM, 3200); break; //PWM Change 1.666KHz
       case 7: digitalWrite(BUZZER_POWER, LOW); break;
       case 8: 
         Sound_Update = 0; Val = 0;
@@ -879,16 +904,17 @@ void Melody_Proc(void)
         noTone(BUZZER_PWM);
         digitalWrite(BUZZER_PWM, LOW);
         digitalWrite(BUZZER_POWER, HIGH); break;
-      case 3: tone(BUZZER_PWM, 1200); break;
-      case 5: tone(BUZZER_PWM, 1600); break;
-      case 7: tone(BUZZER_PWM, 2000); break;
-      case 9: tone(BUZZER_PWM, 2500); break;
-      case 11: tone(BUZZER_PWM, 3300); break;
+      case 3: tone(BUZZER_PWM, 2400); break;
+      case 5: tone(BUZZER_PWM, 3200); break;
+      case 7: tone(BUZZER_PWM, 4000); break;
+      case 9: tone(BUZZER_PWM, 5000); break;
+      case 11: tone(BUZZER_PWM, 6600); break;
       case 13: digitalWrite(BUZZER_POWER, LOW); break;
       case 14:
         Sound_Update = 0; Val = 0;
         noTone(BUZZER_PWM);
         digitalWrite(BUZZER_PWM, LOW);
+        working_mode = MODE_AUTO;
         break;
     }
   }
@@ -897,6 +923,7 @@ void Melody_Proc(void)
 
 void enableTouch (void)
 {
+  //set sensitive
   I2c.write(0x24, 0x39, 0x30);
   I2c.write(0x24, 0x3A, 0x30);
   I2c.write(0x24, 0x3B, 0x30);

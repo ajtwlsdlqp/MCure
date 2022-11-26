@@ -86,6 +86,8 @@ typedef enum
   
   STEP_WORKING_END,      // power off
 
+  STEP_WAIT_INPUT,
+
   // Emergency
 
   STEP_EMERGENCY_STOP
