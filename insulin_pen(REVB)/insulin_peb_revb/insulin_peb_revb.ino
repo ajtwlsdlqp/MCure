@@ -7,6 +7,7 @@
 
 #include <Wire.h>
 #include <I2C.h>
+#include <SoftwareSerial.h>
 
 int Key = 0xFF;
 
@@ -47,17 +48,19 @@ unsigned char mokup_motor_stop_state;
 // for debug
 unsigned char ch;
 
+SoftwareSerial ble(18, 19); // RX, TX
+
 void setup() {
   // put your setup code here, to run once:
   Serial.end();
+  Serial1.end();
+  ble.begin(9600);
 
-  Serial1.begin(9600);    // for ble
-  
   pinMode(BLE_STATE, INPUT);
 
   // after connected keep high -> atmode
-  // after connected keep low  -> bypass mode // default 
-  pinMode(BLE_MODE, OUTPUT);        
+  // after connected keep low  -> bypass mode // default
+  pinMode(BLE_MODE, OUTPUT);
   digitalWrite(BLE_MODE, LOW);
 
   // rising edge -> uart off
@@ -78,9 +81,9 @@ void setup() {
 
   pinMode(MOTOR_SLEEP, OUTPUT);
   digitalWrite(MOTOR_SLEEP, LOW);
-  
+
   pinMode(MOTOR_FALT, INPUT_PULLUP);
-  pinMode(ENCODER_A, INPUT_PULLUP);           
+  pinMode(ENCODER_A, INPUT_PULLUP);
   pinMode(ENCODER_B, INPUT_PULLUP);
   attachInterrupt(0, A_CHANGE, CHANGE);
 
@@ -102,7 +105,7 @@ void setup() {
   pinMode(BUZZER_PWM, OUTPUT);
   noTone(BUZZER_PWM);
   digitalWrite(BUZZER_PWM, LOW);
-  
+
   pinMode(BUZZER_POWER, OUTPUT);
   digitalWrite(BUZZER_POWER, LOW);
 
@@ -148,38 +151,38 @@ void setup() {
 
   //working_mode = MODE_AUTO; // auto mode is default
   working_mode = MODE_MANUAL;
-  
+
   Sound_Update = 2;
   Sound_Num = 3;
   is_touch_enable = 0;
 }
 
-void loop() 
+void loop()
 {
   // put your main code here, to run repeatedly:
   // active allways
 
   Key_Scan();
-  updateTemperatrue();    
+  updateTemperatrue();
   updateLED();
-  
+
   // active only power on
   updatePSI();
   updateMotor();
   Melody_Proc();
-  
+
   // active when it need
   updateEEPROM();
 }
 
-void A_CHANGE() 
-{                                     //Interrupt function to read the x2 pulses of the encoder.
-  if ( digitalRead(ENCODER_B) == 0 ) 
+void A_CHANGE()
+{ //Interrupt function to read the x2 pulses of the encoder.
+  if ( digitalRead(ENCODER_B) == 0 )
   {
     if ( digitalRead(ENCODER_A) == 0 ) pulses++; // Moving forward
     else pulses--; // Moving reverse
-  } 
-  else 
+  }
+  else
   {
     if ( digitalRead(ENCODER_A) == 0 ) pulses--; // Moving reverse
     else pulses++; // Moving forward
@@ -196,39 +199,59 @@ void Key_Read(void)
 
   temp = I2c.read(0x24, 0x2A, 2, rx_buff);
 
-  if(pre_key == 0xFF)
+  if (pre_key == 0xFF)
   {
-    if(rx_buff[0] == 0)
-    {  
+    if (rx_buff[0] == 0)
+    {
       Key = 0xFF;
 
-      if( f_power_state == 1 && mokup_motor_run_state != 0)
+      if ( f_power_state == 1 && mokup_motor_run_state != 0)
       {
         mokup_motor_run_state = 0;
         digitalWrite(MOTOR_PORT_F, LOW);
         digitalWrite(MOTOR_PORT_R, LOW);
       }
     }
-    else if(rx_buff[0] & 0x01){ Key = BLE;   }
-    else if(rx_buff[0] & 0x02){ Key = MOTOR_R;   }
-    else if(rx_buff[0] & 0x04){ Key = MOTOR_F;   }
-    else if(rx_buff[0] & 0x08){ Key = POWER;   }
-    else{ Key = 0xFF;   }
-    
+    else if (rx_buff[0] & 0x01) {
+      Key = BLE;
+    }
+    else if (rx_buff[0] & 0x02) {
+      Key = MOTOR_R;
+    }
+    else if (rx_buff[0] & 0x04) {
+      Key = MOTOR_F;
+    }
+    else if (rx_buff[0] & 0x08) {
+      Key = POWER;
+    }
+    else {
+      Key = 0xFF;
+    }
+
     pre_key = Key;// pre_key
   }
   else
   {
-    if(rx_buff[0] == 0){  Key = 0xFF;   }
-    else if(rx_buff[0] == 0x01){  Key = BLE;   }
-    else if(rx_buff[0] == 0x02){  Key = MOTOR_R;   }
-    else if(rx_buff[0] == 0x04){  Key = MOTOR_F;   }
-    else if(rx_buff[0] == 0x08){  Key = POWER;   }
+    if (rx_buff[0] == 0) {
+      Key = 0xFF;
+    }
+    else if (rx_buff[0] == 0x01) {
+      Key = BLE;
+    }
+    else if (rx_buff[0] == 0x02) {
+      Key = MOTOR_R;
+    }
+    else if (rx_buff[0] == 0x04) {
+      Key = MOTOR_F;
+    }
+    else if (rx_buff[0] == 0x08) {
+      Key = POWER;
+    }
     else
-    { 
+    {
       Key = pre_key;
-    }   
-    
+    }
+
     pre_key = Key;// pre_key
   }
 }
@@ -238,26 +261,26 @@ void Key_Scan(void)
   static unsigned char AutoKeyCount = 0;
   static unsigned char f_PressedKey = 0;
   static unsigned char PrevKey = 0xFF;
-  
-  if( (f_power_state == 0) && (millis() - pre_key_readtime < 20) )return;
-  if( (f_power_state == 1) && (millis() - pre_key_readtime <  8) )return;
+
+  if ( (f_power_state == 0) && (millis() - pre_key_readtime < 20) )return;
+  if ( (f_power_state == 1) && (millis() - pre_key_readtime <  8) )return;
   pre_key_readtime = millis();
-      
+
   Key_Read();             // update Key value
-    
-  if(Key!=0xFF && PrevKey==Key) 
+
+  if (Key != 0xFF && PrevKey == Key)
   {
-    if(f_PressedKey == 0) 
-    {   
+    if (f_PressedKey == 0)
+    {
       is_key_change = 1;
       f_PressedKey = 1;
       AutoKeyCount = 1;
     }
-    else 
-    {         // Hold - Pressed Key
-      if(--AutoKeyCount==0) 
+    else
+    { // Hold - Pressed Key
+      if (--AutoKeyCount == 0)
       {
-        if( Key == MOTOR_R || Key == MOTOR_F  ) 
+        if ( Key == MOTOR_R || Key == MOTOR_F  )
         {
           is_key_change = 1;
           AutoKeyCount = 1; // about 0.15s
@@ -269,49 +292,49 @@ void Key_Scan(void)
   {
     f_PressedKey = 0;
   }
-  
+
   PrevKey = Key;
-  
+
   Key_Proc();
 }
 
 void Key_Proc(void)
 {
-  if(is_key_change == false) return;
+  if (is_key_change == false) return;
   is_key_change = false;
 
-  switch(Key)
+  switch (Key)
   {
     case POWER :
-      if( f_power_state == 0)
+      if ( f_power_state == 0)
       {
         f_power_state = 1;
         digitalWrite(MOTOR_SLEEP, HIGH); // wake up motor drive
         active_step = STEP_USER_INPUT;
         is_target_psi_set = false;
-        
+
         working_mode = MODE_MANUAL;
         Sound_Update = 2; Sound_Num = 5;
         pre_buzzer_tic = millis();
       }
       else
       {
-        if( active_step == STEP_USER_INPUT) // user off function
+        if ( active_step == STEP_USER_INPUT) // user off function
         {
           f_power_state = 0;
 
           digitalWrite(MOTOR_PORT_F, LOW);
           digitalWrite(MOTOR_PORT_R, LOW);
-        
+
           digitalWrite(SOLENOID_PORT, LOW);
           digitalWrite(AIRPUMP_PORT, LOW);
 
           digitalWrite(MOTOR_SLEEP, LOW); // when power off -> enable sleep motor
-        
+
           Sound_Update = 2; Sound_Num = 1;
           pre_buzzer_tic = millis();
         }
-        else if(active_step != STEP_EMERGENCY_STOP)                                // emergency off function
+        else if (active_step != STEP_EMERGENCY_STOP)                               // emergency off function
         {
           digitalWrite(AIRPUMP_PORT, LOW);  // de-active pump
           digitalWrite(SOLENOID_PORT, HIGH);  // block solenoide
@@ -325,9 +348,9 @@ void Key_Proc(void)
       break;
 
     case MOTOR_F :
-      if( f_power_state == 0) break;
+      if ( f_power_state == 0) break;
 
-      if( mokup_motor_run_state != 1)
+      if ( mokup_motor_run_state != 1)
       {
         mokup_motor_run_state = 1;
         pre_encodercheck_time = millis();
@@ -335,7 +358,7 @@ void Key_Proc(void)
         digitalWrite(MOTOR_PORT_F, HIGH);
         digitalWrite(MOTOR_PORT_R, LOW);
       }
-      else if( millis() - pre_encodercheck_time > 8) // if encoder update is not working
+      else if ( millis() - pre_encodercheck_time > 8) // if encoder update is not working
       {
         digitalWrite(MOTOR_PORT_F, LOW);
         digitalWrite(MOTOR_PORT_R, LOW);
@@ -346,12 +369,12 @@ void Key_Proc(void)
         pre_user_motor_worktime = millis();
       }
 
-    break;
+      break;
 
     case MOTOR_R :
-      if( f_power_state == 0) break;
-      
-      if( mokup_motor_run_state != 2)
+      if ( f_power_state == 0) break;
+
+      if ( mokup_motor_run_state != 2)
       {
         mokup_motor_run_state = 2;
         pre_encodercheck_time = millis();
@@ -360,7 +383,7 @@ void Key_Proc(void)
         digitalWrite(MOTOR_PORT_R, HIGH);
         pre_user_motor_worktime = millis();
       }
-      else if( millis() - pre_encodercheck_time > 8) // if encoder update is not working
+      else if ( millis() - pre_encodercheck_time > 8) // if encoder update is not working
       {
         digitalWrite(MOTOR_PORT_F, LOW);
         digitalWrite(MOTOR_PORT_R, LOW);
@@ -370,11 +393,11 @@ void Key_Proc(void)
       {
         pre_user_motor_worktime = millis();
       }
-    break;
+      break;
 
     case BLE :
-      if( f_power_state == 0) break;
-      if( f_ble_state == 0) // turn on ble
+      if ( f_power_state == 0) break;
+      if ( f_ble_state == 0) // turn on ble
       {
         f_ble_state = 1;
         digitalWrite(BLE_UART, LOW);
@@ -388,36 +411,36 @@ void Key_Proc(void)
       Sound_Update = 2; Sound_Num = 3;
       pre_buzzer_tic = millis();
       break;
-    
+
     default : break;
   }
 }
 
 /*
- * temperature control function 
- * must operating every time
- * 10K NTC -> 25'c -> 10K
- * 29'c    -> 8.38690 KOhm ->
- * 27'c    -> 9.14743 KOhm
- * 
- * base    -> 3KOhm
- */
+   temperature control function
+   must operating every time
+   10K NTC -> 25'c -> 10K
+   29'c    -> 8.38690 KOhm ->
+   27'c    -> 9.14743 KOhm
+
+   base    -> 3KOhm
+*/
 void updateTemperatrue (void)
 {
   unsigned int real_temp = 1024;
-  
-  if( millis() - pre_temp_readtime < 50) return;
+
+  if ( millis() - pre_temp_readtime < 50) return;
   pre_temp_readtime = millis();
-  
+
   real_temp = analogRead(READ_TEMP);
 
-  if( real_temp <= 754 ) // 29'c turn on 
+  if ( real_temp <= 754 ) // 29'c turn on
   {
     f_peltier_state = true;
     digitalWrite(PELTIER_FAN, HIGH);
     digitalWrite(PELTIER_PORT, HIGH);
   }
-  else if( real_temp >= 771) // 27'c turn off
+  else if ( real_temp >= 771) // 27'c turn off
   {
     f_peltier_state = false;
     digitalWrite(PELTIER_FAN, LOW);
@@ -426,29 +449,29 @@ void updateTemperatrue (void)
 }
 
 /*
- * activate auto mode
- * activate manual mode via press button
- * target mmHg 110
- * ADC -> 219
- * 
- * temp_mmhg = ((double)real_psi * 5) / 1024;
+   activate auto mode
+   activate manual mode via press button
+   target mmHg 110
+   ADC -> 219
+
+   temp_mmhg = ((double)real_psi * 5) / 1024;
    temp_mmhg = temp_mmhg - 0.5;
    temp_mmhg = temp_mmhg * 3.75;
    temp_mmhg = temp_mmhg * 51.71;
- */
+*/
 void updatePSI (void)
 {
-  if( f_power_state == 0) return;
-  
-  if( millis() - pre_psi_readtime < 12) return;
+  if ( f_power_state == 0) return;
+
+  if ( millis() - pre_psi_readtime < 12) return;
   pre_psi_readtime = millis();
 
-  switch( active_step)
+  switch ( active_step)
   {
     default : break;
-    
-    case STEP_USER_INPUT : 
-      if( working_mode == MODE_AUTO)
+
+    case STEP_USER_INPUT :
+      if ( working_mode == MODE_AUTO)
       {
         active_step = STEP_MAKE_PSI;
         Sound_Update = 2; Sound_Num = 3;
@@ -461,8 +484,8 @@ void updatePSI (void)
     case STEP_MOTOR_MOVE :
     case STEP_MOTOR_WAITE :
     case STEP_MOTOR_HOLD :
-      // if( analogRead(READ_PSI) < 220) -> MOKUP REVA hard to get 110mmhg 
-      if( analogRead(READ_PSI) < 198) // 90mmhg
+      // if( analogRead(READ_PSI) < 220) -> MOKUP REVA hard to get 110mmhg
+      if ( analogRead(READ_PSI) < 198) // 90mmhg
       {
         digitalWrite(AIRPUMP_PORT, HIGH);  // active pump
       }
@@ -472,7 +495,7 @@ void updatePSI (void)
         is_target_psi_set = true;         // set only once
       }
       break;
-      
+
     case STEP_BREAK_PSI :
       digitalWrite(AIRPUMP_PORT, LOW);  // de-active pump
       digitalWrite(SOLENOID_PORT, HIGH);  // block solenoide
@@ -481,7 +504,7 @@ void updatePSI (void)
       break;
 
     case STEP_WORKING_END :
-      if( millis() - pre_valve_close_time > 2 * 100)
+      if ( millis() - pre_valve_close_time > 2 * 100)
       {
         digitalWrite(SOLENOID_PORT, LOW);  // block solenoide
         digitalWrite(AIRPUMP_PORT, LOW);
@@ -491,7 +514,7 @@ void updatePSI (void)
 
         digitalWrite(MOTOR_PORT_F, LOW);
         digitalWrite(MOTOR_PORT_R, LOW);
-      
+
         digitalWrite(SOLENOID_PORT, LOW);
         digitalWrite(AIRPUMP_PORT, LOW);
 
@@ -501,7 +524,7 @@ void updatePSI (void)
       break;
 
     case STEP_EMERGENCY_STOP :
-      if( millis() - pre_valve_close_time > 2 * 125)
+      if ( millis() - pre_valve_close_time > 2 * 125)
       {
         digitalWrite(SOLENOID_PORT, LOW);  // block solenoide
         digitalWrite(AIRPUMP_PORT, LOW);
@@ -510,12 +533,12 @@ void updatePSI (void)
 
         digitalWrite(MOTOR_PORT_F, LOW);
         digitalWrite(MOTOR_PORT_R, LOW);
-      
+
         digitalWrite(SOLENOID_PORT, LOW);
         digitalWrite(AIRPUMP_PORT, LOW);
 
         digitalWrite(MOTOR_SLEEP, LOW); // when power off -> enable sleep motor
-      
+
         //Sound_Update = 2; Sound_Num = 1;
         //pre_buzzer_tic = millis();
       }
@@ -525,31 +548,31 @@ void updatePSI (void)
 
 void updateMotor(void)
 {
-  if( f_power_state == 0) return;
-  
-  switch( active_step)
+  if ( f_power_state == 0) return;
+
+  switch ( active_step)
   {
     default : break;
 
-    case STEP_USER_INPUT : 
+    case STEP_USER_INPUT :
       break;
-      
+
     case STEP_MAKE_PSI :
       //digitalWrite( MOTOR_PORT_F, LOW);
       //digitalWrite( MOTOR_PORT_R, LOW);
 
-      if( is_target_psi_set == true)
+      if ( is_target_psi_set == true)
       {
         Sound_Update = 2; Sound_Num = 3;
         pre_buzzer_tic = millis();
-        
+
         pre_motor_stop_time = millis();
         active_step = STEP_MOTOR_MOVE;
       }
       break;
-    
+
     case STEP_MOTOR_MOVE :
-      if( millis() - pre_motor_stop_time > 20)
+      if ( millis() - pre_motor_stop_time > 20)
       {
         digitalWrite( MOTOR_PORT_F, HIGH);
         active_step = STEP_MOTOR_WAITE;
@@ -560,10 +583,10 @@ void updateMotor(void)
         pre_buzzer_tic = millis();
       }
       break;
-      
+
     case STEP_MOTOR_WAITE :
-      if( millis() - pre_motor_stop_time > 20 &&
-          millis() - pre_encodercheck_time > 8) // if encoder update is not working
+      if ( millis() - pre_motor_stop_time > 20 &&
+           millis() - pre_encodercheck_time > 8) // if encoder update is not working
       {
         digitalWrite(MOTOR_PORT_F, LOW);
         digitalWrite(MOTOR_PORT_R, LOW);
@@ -573,9 +596,9 @@ void updateMotor(void)
         active_step = STEP_MOTOR_HOLD;
       }
       break;
-      
+
     case STEP_MOTOR_HOLD :
-      if( millis() - pre_motor_stop_time > 5 * 125)
+      if ( millis() - pre_motor_stop_time > 5 * 125)
       {
         active_step = STEP_BREAK_PSI;
 
@@ -583,7 +606,7 @@ void updateMotor(void)
         pre_buzzer_tic = millis();
       }
       break;
-      
+
     case STEP_BREAK_PSI :
     case STEP_WORKING_END :
       digitalWrite(MOTOR_PORT_F, LOW);
@@ -598,13 +621,13 @@ void updateLED (void)
   //if( millis() - pre_led_update_time < 1) return;
   //pre_led_update_time = millis();
 
-  if( led_timing >= 4) led_timing = 0;
-  if( f_power_state == 0) ledOffAll();
+  if ( led_timing >= 4) led_timing = 0;
+  if ( f_power_state == 0) ledOffAll();
 
-  switch( led_timing)
+  switch ( led_timing)
   {
     case 0 :  // case for allways turn on ico
-      if( f_power_state == 0) break;
+      if ( f_power_state == 0) break;
       digitalWrite(LED_PWR, LOW);
       digitalWrite(LED_MTF, LOW);
       digitalWrite(LED_MTR, LOW);
@@ -613,22 +636,22 @@ void updateLED (void)
         Connected -> Keep High
         disconnected -> Keep Low
       */
-      if( digitalRead(BLE_STATE) == HIGH)
+      if ( digitalRead(BLE_STATE) == HIGH)
       {
         digitalWrite(LED_BLE, LOW);
       }
       else
       {
-        if( flash_statae == 0) digitalWrite(LED_BLE, LOW);
+        if ( flash_statae == 0) digitalWrite(LED_BLE, LOW);
         else digitalWrite(LED_BLE, HIGH);
       }
       break;
 
     case 1 :
-      if( f_power_state == 0) break;
-      if( analogRead(READ_USB_CON) > 512) 
+      if ( f_power_state == 0) break;
+      if ( analogRead(READ_USB_CON) > 512)
       {
-        if( flash_statae == 0) digitalWrite(LED_BAT_ICO, LOW);
+        if ( flash_statae == 0) digitalWrite(LED_BAT_ICO, LOW);
         else digitalWrite(LED_BAT_ICO, HIGH);
       }
       else
@@ -636,19 +659,19 @@ void updateLED (void)
         digitalWrite(LED_BAT_ICO, LOW);
       }
 
-      if( analogRead(READ_BAT) > 748)
+      if ( analogRead(READ_BAT) > 748)
       {
         digitalWrite(LED_BAT_STATE1, LOW);
         digitalWrite(LED_BAT_STATE2, LOW);
         digitalWrite(LED_BAT_STATE3, LOW);
       }
-      else if( analogRead(READ_BAT) > 572)
+      else if ( analogRead(READ_BAT) > 572)
       {
         digitalWrite(LED_BAT_STATE1, LOW);
         digitalWrite(LED_BAT_STATE2, LOW);
         digitalWrite(LED_BAT_STATE3, HIGH);
       }
-      else if( analogRead(READ_BAT) > 220)
+      else if ( analogRead(READ_BAT) > 220)
       {
         digitalWrite(LED_BAT_STATE1, LOW);
         digitalWrite(LED_BAT_STATE2, HIGH);
@@ -656,7 +679,7 @@ void updateLED (void)
       }
       else
       {
-        if( flash_statae == 0) digitalWrite(LED_BAT_STATE1, LOW);
+        if ( flash_statae == 0) digitalWrite(LED_BAT_STATE1, LOW);
         else digitalWrite(LED_BAT_STATE1, HIGH);
         digitalWrite(LED_BAT_STATE2, HIGH);
         digitalWrite(LED_BAT_STATE3, HIGH);
@@ -664,58 +687,58 @@ void updateLED (void)
       break;
 
     case 2 :
-      if( f_power_state == 0) break;
+      if ( f_power_state == 0) break;
 
       digitalWrite(LED_MOTOR_ICO, LOW);
-      switch( active_step)
+      switch ( active_step)
       {
         default : break;
-        
-        case STEP_USER_INPUT : 
+
+        case STEP_USER_INPUT :
           digitalWrite(LED_MOTOR_STATE1, HIGH);
           digitalWrite(LED_MOTOR_STATE2, HIGH);
           digitalWrite(LED_MOTOR_STATE3, HIGH);
           digitalWrite(LED_MOTOR_STATE4, HIGH);
           break;
-          
+
         case STEP_MAKE_PSI :
-          if( flash_statae == 0) digitalWrite(LED_MOTOR_STATE1, LOW);
+          if ( flash_statae == 0) digitalWrite(LED_MOTOR_STATE1, LOW);
           else digitalWrite(LED_MOTOR_STATE1, HIGH);
           digitalWrite(LED_MOTOR_STATE2, HIGH);
           digitalWrite(LED_MOTOR_STATE3, HIGH);
           digitalWrite(LED_MOTOR_STATE4, HIGH);
           break;
-          
+
         case STEP_MOTOR_MOVE :
         case STEP_MOTOR_WAITE :
           digitalWrite(LED_MOTOR_STATE1, LOW);
-          if( flash_statae == 0) digitalWrite(LED_MOTOR_STATE2, LOW);
+          if ( flash_statae == 0) digitalWrite(LED_MOTOR_STATE2, LOW);
           else digitalWrite(LED_MOTOR_STATE2, HIGH);
           digitalWrite(LED_MOTOR_STATE3, HIGH);
           digitalWrite(LED_MOTOR_STATE4, HIGH);
           break;
-          
+
         case STEP_MOTOR_HOLD :
           digitalWrite(LED_MOTOR_STATE1, LOW);
           digitalWrite(LED_MOTOR_STATE2, LOW);
-          if( flash_statae == 0) digitalWrite(LED_MOTOR_STATE3, LOW);
+          if ( flash_statae == 0) digitalWrite(LED_MOTOR_STATE3, LOW);
           else digitalWrite(LED_MOTOR_STATE3, HIGH);
           digitalWrite(LED_MOTOR_STATE4, HIGH);
           break;
-          
+
         case STEP_BREAK_PSI :
         case STEP_WORKING_END :
           digitalWrite(LED_MOTOR_STATE1, LOW);
           digitalWrite(LED_MOTOR_STATE2, LOW);
           digitalWrite(LED_MOTOR_STATE3, LOW);
-          if( flash_statae == 0) digitalWrite(LED_MOTOR_STATE4, LOW);
+          if ( flash_statae == 0) digitalWrite(LED_MOTOR_STATE4, LOW);
           else digitalWrite(LED_MOTOR_STATE4, HIGH);
           break;
       }
       break;
 
     case 3 :
-      if( f_peltier_state == true)
+      if ( f_peltier_state == true)
       {
         digitalWrite(LED_TEMP_DANGER, LOW);
         digitalWrite(LED_TEMP_NORMAL, HIGH);
@@ -728,11 +751,11 @@ void updateLED (void)
       break;
   }
   // 50ms -> 400ms
-  if( millis() - pre_led_flash_time > 50)  // func for flash 
+  if ( millis() - pre_led_flash_time > 50) // func for flash
   {
     pre_led_flash_time = millis();
 
-    if( flash_statae == 0) flash_statae = 1;
+    if ( flash_statae == 0) flash_statae = 1;
     else flash_statae = 0;
   }
 
@@ -763,24 +786,44 @@ void readEEPROM (void)
 {
   int addr = 0x00;
   signed int data[2];
-    
-  for (int i = 0; i<2; i++)
+
+  for (int i = 0; i < 2; i++)
   {
     data[i] = EEPROM.read(addr);
     addr += sizeof(signed int);
     delay(1);
   }
-  
-  if( data[0] == data[1]) working_mode = data[0];
-  else working_mode = MODE_AUTO;
+
+  // if( data[0] != 0x55) // this is first time to start this machin
+  {
+    //uint8_t tx_set_adv[19] = {0x41, 0x54, 0x2b, 0x41, 0x44, 0x56, 0x44, 0x41, 0x54, 0x41, 0x3d, 0x69, 0x6e, 0x73, 0x75, 0x41, 0x49, 0x44, 0x0D};
+    //uint8_t tx_set_man[17] = {0x41, 0x54, 0x2b, 0x4d, 0x41, 0x4e, 0x55, 0x46, 0x3d, 0x69, 0x6e, 0x73, 0x75, 0x41, 0x49, 0x44, 0x0D};
+    //uint8_t tx_at[3] = {0x41, 0x54, 0x0D};
+    //uint8_t tx_atnF[5] = {0x41, 0x54, 0x26, 0x46, 0x0D};
+
+    is_update_infor = true;
+
+    // TODO : update Ble Data
+    ble.write("AT");
+    ble.write(0x0D);
+    delay(100);
+
+    ble.write("AT+MANUF=insuAID");
+    ble.write(0x0D);
+    delay(100);
+
+    ble.write("AT+ADVDATA=insuAID");
+    ble.write(0x0D);
+    delay(100);
+  }
 }
 
 void updateEEPROM (void)
 {
-  if( is_update_infor == false) return;
+  if ( is_update_infor == false) return;
   is_update_infor = false;
 
-  for (int i = 0 ; i < 10; i++) 
+  for (int i = 0 ; i < 10; i++)
   {
     EEPROM.write(i, 0);
     delay(1);
@@ -788,10 +831,10 @@ void updateEEPROM (void)
 
   int addr = 0x00;
   unsigned int data[2];
-  data[0] = working_mode;
-  data[1] = working_mode;
+  data[0] = 0x55;
+  data[1] = 0x55;
 
-  for (int i = 0; i<2; i++)
+  for (int i = 0; i < 2; i++)
   {
     EEPROM.write(addr, data[i]);
     addr += sizeof(signed int);
@@ -802,12 +845,12 @@ void updateEEPROM (void)
 void Melody_Proc(void)
 {
   static unsigned char Val = 0;
-  
+
   if (Sound_Update == 0) return;
-  if( millis() - pre_buzzer_tic < 8) return;
+  if ( millis() - pre_buzzer_tic < 8) return;
   pre_buzzer_tic = millis();
 
-  if(Sound_Update == 2)
+  if (Sound_Update == 2)
   {
     Val = 0;
     Sound_Update = 1;
@@ -818,7 +861,7 @@ void Melody_Proc(void)
   {
     switch (Val)
     {
-      case 1: 
+      case 1:
         noTone(BUZZER_PWM);
         digitalWrite(BUZZER_PWM, LOW);
         digitalWrite(BUZZER_POWER, HIGH); break;
@@ -839,7 +882,7 @@ void Melody_Proc(void)
   {
     switch (Val)
     {
-      case 1: 
+      case 1:
         noTone(BUZZER_PWM);
         digitalWrite(BUZZER_PWM, LOW);
         digitalWrite(BUZZER_POWER, HIGH); break;
@@ -856,10 +899,10 @@ void Melody_Proc(void)
   {
     switch (Val)
     {
-      case 1: 
+      case 1:
         noTone(BUZZER_PWM);
         digitalWrite(BUZZER_PWM, LOW);
-        digitalWrite(BUZZER_POWER, HIGH); 
+        digitalWrite(BUZZER_POWER, HIGH);
         break;
       case 3: tone(BUZZER_PWM, 3200); break; //PWM ON At1.666KHz
       case 5: tone(BUZZER_PWM, 5000); break; //PWM Change 2.5KHz
@@ -869,10 +912,10 @@ void Melody_Proc(void)
         noTone(BUZZER_PWM);
         digitalWrite(BUZZER_PWM, LOW);
 
-        if( is_touch_enable == 0)
+        if ( is_touch_enable == 0)
         {
           is_touch_enable = 1;
-          enableTouch();          
+          enableTouch();
         }
         break;
     }
@@ -881,7 +924,7 @@ void Melody_Proc(void)
   {
     switch (Val)
     {
-      case 1: 
+      case 1:
         noTone(BUZZER_PWM);
         digitalWrite(BUZZER_PWM, LOW);
         digitalWrite(BUZZER_POWER, LOW);
@@ -889,7 +932,7 @@ void Melody_Proc(void)
       case 3: tone(BUZZER_PWM, 5000); break; //PWM ON At 2.5KHz
       case 5: tone(BUZZER_PWM, 3200); break; //PWM Change 1.666KHz
       case 7: digitalWrite(BUZZER_POWER, LOW); break;
-      case 8: 
+      case 8:
         Sound_Update = 0; Val = 0;
         noTone(BUZZER_PWM);
         digitalWrite(BUZZER_PWM, LOW);
@@ -900,7 +943,7 @@ void Melody_Proc(void)
   {
     switch (Val)
     {
-      case 1: 
+      case 1:
         noTone(BUZZER_PWM);
         digitalWrite(BUZZER_PWM, LOW);
         digitalWrite(BUZZER_POWER, HIGH); break;
@@ -946,7 +989,7 @@ void disableTouch (void)
 void resetTouch (void)
 {
   /*
-  response_off_ctrl / response_ctrl / bf_mode / software_rst
+    response_off_ctrl / response_ctrl / bf_mode / software_rst
         0 1 0     /     0 1 1     /   0     /       1
   */
   I2c.write(0x24, 0x36, 0x4D);
