@@ -5,6 +5,8 @@
 #include "EEPROM.h"
 //#include "Melody.h"
 
+#include "LowPower.h"
+
 #include <Wire.h>
 #include <I2C.h>
 #include <SoftwareSerial.h>
@@ -42,11 +44,13 @@ unsigned long pre_touch_stabil_time = millis();
 unsigned char is_touch_enable;
 
 unsigned long pre_led_update_time = millis();
+unsigned long next_sleep_ent_time = millis();
 
 unsigned char mokup_motor_run_state;
 unsigned char mokup_motor_stop_state;
 // for debug
 unsigned char ch;
+
 
 SoftwareSerial ble(18, 19); // RX, TX
 
@@ -174,6 +178,12 @@ void loop()
 
   // active when it need
   updateEEPROM();
+
+  if( f_power_state == 0 && ( millis() - next_sleep_ent_time > 200) )
+  {
+    LowPower.powerDown(SLEEP_2S, ADC_OFF, BOD_OFF);       
+    next_sleep_ent_time = millis();
+  }
 }
 
 void A_CHANGE()
@@ -263,8 +273,7 @@ void Key_Scan(void)
   static unsigned char f_PressedKey = 0;
   static unsigned char PrevKey = 0xFF;
 
-  if ( (f_power_state == 0) && (millis() - pre_key_readtime < 200) )return;
-  if ( (f_power_state == 1) && (millis() - pre_key_readtime < 50) )return;
+  if( millis() - pre_key_readtime < 50) return;
   pre_key_readtime = millis();
 
   Key_Read();             // update Key value
@@ -323,6 +332,7 @@ void Key_Proc(void)
         if ( active_step == STEP_USER_INPUT) // user off function
         {
           f_power_state = 0;
+          next_sleep_ent_time = millis();
 
           digitalWrite(MOTOR_PORT_F, LOW);
           digitalWrite(MOTOR_PORT_R, LOW);
@@ -512,6 +522,7 @@ void updatePSI (void)
         digitalWrite(MOTOR_SLEEP, LOW); // when power off -> enable sleep motor
 
         f_power_state = 0;
+        next_sleep_ent_time = millis();
 
         digitalWrite(MOTOR_PORT_F, LOW);
         digitalWrite(MOTOR_PORT_R, LOW);
@@ -531,7 +542,8 @@ void updatePSI (void)
         digitalWrite(AIRPUMP_PORT, LOW);
 
         f_power_state = 0;
-
+        next_sleep_ent_time = millis();
+        
         digitalWrite(MOTOR_PORT_F, LOW);
         digitalWrite(MOTOR_PORT_R, LOW);
 
@@ -817,6 +829,8 @@ void readEEPROM (void)
     ble.write("AT+ADVDATA=insuAID");
     ble.write(0x0D);
     delay(300);
+
+    digitalWrite(BLE_UART, HIGH);
   }
 }
 

@@ -21,8 +21,8 @@
 #define LED_MOTOR_STATE3  15
 #define LED_MOTOR_STATE4  39
 
-#define LED_TEMP_DANGER   29
-#define LED_TEMP_NORMAL   28
+#define LED_TEMP_DANGER   28
+#define LED_TEMP_NORMAL   29
 
 // Define temp control
 #define PELTIER_PORT      24
