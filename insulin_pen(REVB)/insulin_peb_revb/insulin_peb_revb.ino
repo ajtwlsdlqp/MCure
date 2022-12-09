@@ -179,10 +179,14 @@ void loop()
   // active when it need
   updateEEPROM();
 
-  if( f_power_state == 0 && ( millis() - next_sleep_ent_time > 200) )
+
+  if( is_touch_enable == 1)
   {
-    LowPower.powerDown(SLEEP_2S, ADC_OFF, BOD_OFF);       
-    next_sleep_ent_time = millis();
+    if( f_power_state == 0 && ( millis() - next_sleep_ent_time > 200) )
+    {
+      LowPower.powerDown(SLEEP_2S, ADC_OFF, BOD_OFF);       
+      next_sleep_ent_time = millis();
+    }
   }
 }
 
@@ -273,7 +277,7 @@ void Key_Scan(void)
   static unsigned char f_PressedKey = 0;
   static unsigned char PrevKey = 0xFF;
 
-  if( millis() - pre_key_readtime < 50) return;
+  if( millis() - pre_key_readtime < 40) return;
   pre_key_readtime = millis();
 
   Key_Read();             // update Key value
@@ -469,6 +473,9 @@ void updateTemperatrue (void)
    temp_mmhg = temp_mmhg - 0.5;
    temp_mmhg = temp_mmhg * 3.75;
    temp_mmhg = temp_mmhg * 51.71;
+
+   // Ref 3v3 adc340 target 115.72 mmhg
+   // ref 3v3 adc310 target 96.956 mmhg
 */
 void updatePSI (void)
 {
@@ -496,7 +503,8 @@ void updatePSI (void)
     case STEP_MOTOR_WAITE :
     case STEP_MOTOR_HOLD :
       // if( analogRead(READ_PSI) < 220) -> MOKUP REVA hard to get 110mmhg
-      if ( analogRead(READ_PSI) < 198) // 90mmhg
+      //if ( analogRead(READ_PSI) < 198) // 90mmhg -> ref 5V
+      if ( analogRead(READ_PSI) < 310) // 90mmhg -> ref 3v3
       {
         digitalWrite(AIRPUMP_PORT, HIGH);  // active pump
       }
@@ -631,11 +639,11 @@ void updateMotor(void)
 void updateLED (void)
 {
   static uint8_t led_timing = 0;
-  // if( millis() - pre_led_update_time < 2) return;
-  // pre_led_update_time = millis();
+//   if( micros() - pre_led_update_time < 400) return;
+//   pre_led_update_time = micros();
 
   if ( led_timing >= 4) led_timing = 0;
-  // if ( f_power_state == 0) ledOffAll();
+//  if ( f_power_state == 0) ledOffAll();
   ledOffAll();
 
   switch ( led_timing)
@@ -663,7 +671,7 @@ void updateLED (void)
 
     case 1 :
       if ( f_power_state == 0) break;
-      if ( analogRead(READ_USB_CON) > 512)
+      if ( analogRead(READ_USB_CON) > 1000)
       {
         if ( flash_statae == 0) digitalWrite(LED_BAT_ICO, LOW);
         else digitalWrite(LED_BAT_ICO, HIGH);
@@ -672,7 +680,7 @@ void updateLED (void)
       {
         digitalWrite(LED_BAT_ICO, LOW);
       }
-
+/*
       if ( analogRead(READ_BAT) > 748)
       {
         digitalWrite(LED_BAT_STATE1, LOW);
@@ -686,6 +694,33 @@ void updateLED (void)
         digitalWrite(LED_BAT_STATE3, HIGH);
       }
       else if ( analogRead(READ_BAT) > 220)
+      {
+        digitalWrite(LED_BAT_STATE1, LOW);
+        digitalWrite(LED_BAT_STATE2, HIGH);
+        digitalWrite(LED_BAT_STATE3, HIGH);
+      }
+      else
+      {
+        if ( flash_statae == 0) digitalWrite(LED_BAT_STATE1, LOW);
+        else digitalWrite(LED_BAT_STATE1, HIGH);
+        digitalWrite(LED_BAT_STATE2, HIGH);
+        digitalWrite(LED_BAT_STATE3, HIGH);
+      }
+*/
+      // ref 3V3
+      if ( analogRead(READ_BAT) > 635)
+      {
+        digitalWrite(LED_BAT_STATE1, LOW);
+        digitalWrite(LED_BAT_STATE2, LOW);
+        digitalWrite(LED_BAT_STATE3, LOW);
+      }
+      else if ( analogRead(READ_BAT) > 589)
+      {
+        digitalWrite(LED_BAT_STATE1, LOW);
+        digitalWrite(LED_BAT_STATE2, LOW);
+        digitalWrite(LED_BAT_STATE3, HIGH);
+      }
+      else if ( analogRead(READ_BAT) > 558)
       {
         digitalWrite(LED_BAT_STATE1, LOW);
         digitalWrite(LED_BAT_STATE2, HIGH);
@@ -820,15 +855,15 @@ void readEEPROM (void)
     // TODO : update Ble Data
     ble.write("AT");
     ble.write(0x0D);
-    delay(300);
+    delay(20);
 
     ble.write("AT+MANUF=insuAID");
     ble.write(0x0D);
-    delay(300);
+    delay(20);
 
     ble.write("AT+ADVDATA=insuAID");
     ble.write(0x0D);
-    delay(300);
+    delay(20);
 
     digitalWrite(BLE_UART, HIGH);
   }
@@ -984,14 +1019,14 @@ void Melody_Proc(void)
 void enableTouch (void)
 {
   //set sensitive
-  I2c.write(0x24, 0x39, 0x30);
-  I2c.write(0x24, 0x3A, 0x30);
-  I2c.write(0x24, 0x3B, 0x30);
-  I2c.write(0x24, 0x3C, 0x30);
-  I2c.write(0x24, 0x3D, 0x30);
-  I2c.write(0x24, 0x3E, 0x30);
-  I2c.write(0x24, 0x3F, 0x30);
-  I2c.write(0x24, 0x40, 0x30);
+  I2c.write(0x24, 0x39, 0x05);
+  I2c.write(0x24, 0x3A, 0x05);
+  I2c.write(0x24, 0x3B, 0x05);
+  I2c.write(0x24, 0x3C, 0x05);
+  I2c.write(0x24, 0x3D, 0x05);
+  I2c.write(0x24, 0x3E, 0x05);
+  I2c.write(0x24, 0x3F, 0x05);
+  I2c.write(0x24, 0x40, 0x05);
 
   delay(100);
 
