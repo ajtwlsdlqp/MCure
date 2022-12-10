@@ -180,12 +180,19 @@ void loop()
   updateEEPROM();
 
 
-  if( is_touch_enable == 1)
+  if ( analogRead(READ_USB_CON) > 1000)
   {
-    if( f_power_state == 0 && ( millis() - next_sleep_ent_time > 200) )
+    next_sleep_ent_time = millis();
+  }
+  else
+  {
+    if( is_touch_enable == 1)
     {
-      LowPower.powerDown(SLEEP_2S, ADC_OFF, BOD_OFF);       
-      next_sleep_ent_time = millis();
+      if( f_power_state == 0 && ( millis() - next_sleep_ent_time > 200) )
+      {
+        LowPower.powerDown(SLEEP_2S, ADC_OFF, BOD_OFF);       
+        next_sleep_ent_time = millis();
+      }
     }
   }
 }
@@ -277,7 +284,7 @@ void Key_Scan(void)
   static unsigned char f_PressedKey = 0;
   static unsigned char PrevKey = 0xFF;
 
-  if( millis() - pre_key_readtime < 40) return;
+  if( millis() - pre_key_readtime < 20) return;
   pre_key_readtime = millis();
 
   Key_Read();             // update Key value
@@ -670,43 +677,26 @@ void updateLED (void)
       break;
 
     case 1 :
-      if ( f_power_state == 0) break;
+      if ( f_power_state == 0 && (analogRead(READ_USB_CON) < 1000) )break;
+      
       if ( analogRead(READ_USB_CON) > 1000)
       {
-        if ( flash_statae == 0) digitalWrite(LED_BAT_ICO, LOW);
-        else digitalWrite(LED_BAT_ICO, HIGH);
+        if( analogRead(READ_FULL_CHARGE) > 1000) 
+        {
+          digitalWrite(LED_BAT_ICO, LOW);
+        }
+        else
+        {
+          if ( flash_statae == 0) digitalWrite(LED_BAT_ICO, LOW);
+          else digitalWrite(LED_BAT_ICO, HIGH);
+        }
+
       }
       else
       {
         digitalWrite(LED_BAT_ICO, LOW);
       }
-/*
-      if ( analogRead(READ_BAT) > 748)
-      {
-        digitalWrite(LED_BAT_STATE1, LOW);
-        digitalWrite(LED_BAT_STATE2, LOW);
-        digitalWrite(LED_BAT_STATE3, LOW);
-      }
-      else if ( analogRead(READ_BAT) > 572)
-      {
-        digitalWrite(LED_BAT_STATE1, LOW);
-        digitalWrite(LED_BAT_STATE2, LOW);
-        digitalWrite(LED_BAT_STATE3, HIGH);
-      }
-      else if ( analogRead(READ_BAT) > 220)
-      {
-        digitalWrite(LED_BAT_STATE1, LOW);
-        digitalWrite(LED_BAT_STATE2, HIGH);
-        digitalWrite(LED_BAT_STATE3, HIGH);
-      }
-      else
-      {
-        if ( flash_statae == 0) digitalWrite(LED_BAT_STATE1, LOW);
-        else digitalWrite(LED_BAT_STATE1, HIGH);
-        digitalWrite(LED_BAT_STATE2, HIGH);
-        digitalWrite(LED_BAT_STATE3, HIGH);
-      }
-*/
+      
       // ref 3V3
       if ( analogRead(READ_BAT) > 635)
       {
