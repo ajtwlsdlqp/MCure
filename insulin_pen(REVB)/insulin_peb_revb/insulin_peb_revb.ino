@@ -1,4 +1,6 @@
+
 #define MOKUP_MODE    1
+#define BTN_MODE      1
 
 #include "myDef.h"
 #include "myFuncDef.h"
@@ -72,11 +74,13 @@ void setup() {
   digitalWrite(BLE_UART, LOW);
 
   ble.begin(9600);
-
+  
+  #if !BTN_MODE
   I2c.begin();
   I2c.timeOut(2000);
   I2c.pullup(true);
-
+  #endif
+  
   // motor
   pinMode(MOTOR_PORT_F, OUTPUT);
   digitalWrite(MOTOR_PORT_F, LOW);
@@ -114,9 +118,6 @@ void setup() {
   pinMode(BUZZER_POWER, OUTPUT);
   digitalWrite(BUZZER_POWER, LOW);
 
-  pinMode(LED_PWR, OUTPUT);
-  pinMode(LED_MTF, OUTPUT);
-  pinMode(LED_MTR, OUTPUT);
   pinMode(LED_BLE, OUTPUT);
   pinMode(LED_BAT_ICO, OUTPUT);
   pinMode(LED_BAT_STATE1, OUTPUT);
@@ -130,9 +131,20 @@ void setup() {
   pinMode(LED_TEMP_DANGER, OUTPUT);
   pinMode(LED_TEMP_NORMAL, OUTPUT);
 
+  #if BTN_MODE
+  pinMode(LED_PWR, INPUT_PULLUP);
+  pinMode(LED_MTF, INPUT_PULLUP);
+  pinMode(LED_MTR, INPUT_PULLUP);
+  #else
+  pinMode(LED_PWR, OUTPUT);
+  pinMode(LED_MTF, OUTPUT);
+  pinMode(LED_MTR, OUTPUT);
+  
   digitalWrite(LED_PWR, HIGH);
   digitalWrite(LED_MTF, HIGH);
   digitalWrite(LED_MTR, HIGH);
+  #endif
+  
   digitalWrite(LED_BLE, HIGH);
   digitalWrite(LED_BAT_ICO, HIGH);
   digitalWrite(LED_BAT_STATE1, HIGH);
@@ -212,7 +224,40 @@ void A_CHANGE()
   pre_encodercheck_time = millis();
 }
 
+#if BTN_MODE
+void Key_Read(void)
+{
+  static unsigned char pre_key = 0xFF;
+  
+  if (pre_key == 0xFF)
+  {
+    if( digitalRead(LED_PWR) == LOW){ Key = POWER; }
+    else if( digitalRead(LED_MTF) == LOW){ Key = MOTOR_F; }
+    else if( digitalRead(LED_MTR) == LOW){ Key = MOTOR_R; }
+    else 
+    {
+      Key = 0xFF;
+      
+      if ( f_power_state == 1 && mokup_motor_run_state != 0)
+      {
+        mokup_motor_run_state = 0;
+        digitalWrite(MOTOR_PORT_F, LOW);
+        digitalWrite(MOTOR_PORT_R, LOW);
+      }
+    }
+    pre_key = Key;// pre_key
+  }
+  else
+  {
+    if( digitalRead(LED_PWR) == LOW){ Key = POWER; }
+    else if( digitalRead(LED_MTF) == LOW){ Key = MOTOR_F; }
+    else if( digitalRead(LED_MTR) == LOW){ Key = MOTOR_R; }
+    else { Key = 0xFF; }
 
+    pre_key = Key;// pre_key
+  }
+}
+#else
 void Key_Read(void)
 {
   unsigned char temp = 0;
@@ -277,6 +322,8 @@ void Key_Read(void)
     pre_key = Key;// pre_key
   }
 }
+#endif
+
 
 void Key_Scan(void)
 {
@@ -511,7 +558,9 @@ void updatePSI (void)
     case STEP_MOTOR_HOLD :
       // if( analogRead(READ_PSI) < 220) -> MOKUP REVA hard to get 110mmhg
       //if ( analogRead(READ_PSI) < 198) // 90mmhg -> ref 5V
-      if ( analogRead(READ_PSI) < 310) // 90mmhg -> ref 3v3
+      
+      // if ( analogRead(READ_PSI) < 310) // 90mmhg -> ref 3v3
+      if ( analogRead(READ_PSI) < 620) // 90mmhg -> ref 3v3
       {
         digitalWrite(AIRPUMP_PORT, HIGH);  // active pump
       }
@@ -657,10 +706,13 @@ void updateLED (void)
   {
     case 0 :  // case for allways turn on ico
       if ( f_power_state == 0) break;
+
+      #if !BTN_MODE
       digitalWrite(LED_PWR, LOW);
       digitalWrite(LED_MTF, LOW);
       digitalWrite(LED_MTR, LOW);
-
+      #endif
+      
       /*
         Connected -> Keep High
         disconnected -> Keep Low
@@ -803,9 +855,12 @@ void updateLED (void)
 
 void ledOffAll(void)
 {
+  #if !BTN_MODE
   digitalWrite(LED_PWR, HIGH);
   digitalWrite(LED_MTR, HIGH);
   digitalWrite(LED_MTF, HIGH);
+  #endif
+  
   digitalWrite(LED_BLE, HIGH);
   digitalWrite(LED_BAT_ICO, HIGH);
   digitalWrite(LED_BAT_STATE1, HIGH);
@@ -855,7 +910,7 @@ void readEEPROM (void)
     ble.write(0x0D);
     delay(20);
 
-    digitalWrite(BLE_UART, HIGH);
+    digitalWrite(BLE_UART, LOW);
   }
 }
 
@@ -997,12 +1052,13 @@ void Melody_Proc(void)
     }
   }
 
-
+  #if !BTN_MODE
   if ( is_touch_enable == 0)
   {
     is_touch_enable = 1;
     enableTouch();
   }
+  #endif
 
 }
 
