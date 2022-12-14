@@ -374,6 +374,7 @@ void Key_Scan(void)
         if(Key == POWER)
         {
           is_key_change = 1;
+          AutoKeyCount = 0xFF; // about 0.15s
         }
         
       }
