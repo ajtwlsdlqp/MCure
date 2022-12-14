@@ -4,6 +4,8 @@
 #define MOTOR_R           0x04
 #define BLE               0x08
 
+#define POWER_PUMP        0x10
+
 // Define LED
 #define LED_PWR           36
 #define LED_MTF           37
@@ -91,6 +93,8 @@ typedef enum
 
   // Emergency
 
-  STEP_EMERGENCY_STOP
+  STEP_EMERGENCY_STOP,
+
+  STEP_USER_OFF
   
 }active_step_list;

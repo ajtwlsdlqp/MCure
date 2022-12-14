@@ -6,6 +6,7 @@ void updateTemperatrue (void);
 void updatePSI (void);
 void updateMotor(void);
 void updateLED (void);
+void updateBLE (void);
 
 void A_CHANGE();  //Interrupt function to read the x2 pulses of the encoder.
 
