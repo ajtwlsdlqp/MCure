@@ -334,6 +334,7 @@ void Key_Scan(void)
   static unsigned char AutoKeyCount = 0;
   static unsigned char f_PressedKey = 0;
   static unsigned char PrevKey = 0xFF;
+  static unsigned char is_notify = 0;
 
   if( millis() - pre_key_readtime < 20) return;
   pre_key_readtime = millis();
@@ -346,12 +347,8 @@ void Key_Scan(void)
     {
       if( Key == POWER)
       {
-        if( active_step == STEP_USER_INPUT || active_step == STEP_MAKE_PSI)
-        {
-          Key = POWER_PUMP;
-          is_key_change = 1;
-        }
-        AutoKeyCount = 50;  // 20ms * 50ms = 1000ms = 1S
+        AutoKeyCount = 0xFF;
+        is_notify = 3;
       }
       else
       {
@@ -363,30 +360,62 @@ void Key_Scan(void)
     }
     else
     { // Hold - Pressed Key
-      if (--AutoKeyCount == 0)
-      {
         if( Key == MOTOR_R || Key == MOTOR_F  )
         {
-          is_key_change = 1;
-          AutoKeyCount = 1; // about 0.15s
+          if (--AutoKeyCount == 0)
+          {
+            is_key_change = 1;
+            AutoKeyCount = 1; // about 0.15s
+          }
         }
-
-        if(Key == POWER)
+        else if(Key == POWER)
         {
-          is_key_change = 1;
-          AutoKeyCount = 0xFF; // about 0.15s
+          --AutoKeyCount;
+          if (AutoKeyCount < 0xFC && is_notify == 3) // 20ms * 10 = 200ms
+          {
+            is_notify = 2;
+            if(active_step == STEP_USER_INPUT || active_step == STEP_MAKE_PSI)
+            {
+              Sound_Update = 2; Sound_Num = 3;
+              pre_buzzer_tic = millis();
+            }
+          }
+          else if (AutoKeyCount < 0xCD && is_notify == 2)                // 20ms * 50 = 1S;
+          {
+            is_notify = 1;
+            if( f_power_state == 0)
+            {
+              Sound_Update = 2; Sound_Num = 5;
+              pre_buzzer_tic = millis();
+            }
+            else
+            {
+              Sound_Update = 2; Sound_Num = 1;
+              pre_buzzer_tic = millis();
+            }
+          }
         }
-        
-      }
     }
   }
   else
   {
     f_PressedKey = 0;
+
+    if( is_notify == 2 && (active_step == STEP_USER_INPUT || active_step == STEP_MAKE_PSI) )
+    {
+      Key = POWER_PUMP;
+      is_key_change = 1;
+    }
+    else if( is_notify == 1)
+    {
+      Key = POWER;
+      is_key_change = 1;
+    }
+    
+    is_notify = 0;
   }
 
   PrevKey = Key;
-
   Key_Proc();
 }
 
@@ -403,15 +432,10 @@ void Key_Proc(void)
       if( active_step == STEP_USER_INPUT)
       {
         active_step = STEP_MAKE_PSI;
-        Sound_Update = 2; Sound_Num = 3;
-        pre_buzzer_tic = millis();
       }
       else if( active_step == STEP_MAKE_PSI)
       {
         active_step = STEP_USER_INPUT;
-        Sound_Update = 2; Sound_Num = 3;
-        pre_buzzer_tic = millis();
-
         digitalWrite(AIRPUMP_PORT, LOW);  // de-active pump
       }
       break;
@@ -425,8 +449,6 @@ void Key_Proc(void)
         is_target_psi_set = false;
 
         working_mode = MODE_MANUAL;
-        Sound_Update = 2; Sound_Num = 5;
-        pre_buzzer_tic = millis();
       }
       else
       {
@@ -444,9 +466,6 @@ void Key_Proc(void)
           digitalWrite(AIRPUMP_PORT, LOW);
 
           digitalWrite(MOTOR_SLEEP, LOW); // when power off -> enable sleep motor
-
-          Sound_Update = 2; Sound_Num = 1;
-          pre_buzzer_tic = millis();
         }
         else if (active_step != STEP_EMERGENCY_STOP)                               // emergency off function
         {
@@ -454,8 +473,6 @@ void Key_Proc(void)
           digitalWrite(SOLENOID_PORT, HIGH);  // block solenoide
           pre_valve_close_time = millis();
 
-          Sound_Update = 2; Sound_Num = 1;
-          pre_buzzer_tic = millis();
           active_step = STEP_EMERGENCY_STOP;
         }
       }
@@ -554,7 +571,8 @@ void updateTemperatrue (void)
     digitalWrite(PELTIER_FAN, HIGH);
     digitalWrite(PELTIER_PORT, HIGH);
   }
-  else if ( real_temp >= 771) // 27'c turn off
+  //else if ( real_temp >= 771) // 27'c turn off
+  else if( real_temp >= 763) // 28'c
   {
     f_peltier_state = false;
     digitalWrite(PELTIER_FAN, LOW);
