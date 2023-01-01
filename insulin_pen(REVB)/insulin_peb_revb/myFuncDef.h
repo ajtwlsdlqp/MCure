@@ -16,3 +16,6 @@ void readEEPROM (void);
 void Melody_Proc(void);
 
 void ledOffAll(void);
+
+
+void updateCeEmc();

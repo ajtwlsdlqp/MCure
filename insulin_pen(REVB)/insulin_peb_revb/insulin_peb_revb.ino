@@ -1,6 +1,7 @@
 
 #define MOKUP_MODE    1
 #define BTN_MODE      1
+#define CE_EMC        1
 
 #include "myDef.h"
 #include "myFuncDef.h"
@@ -185,16 +186,18 @@ void loop()
   updateTemperatrue();
   updateLED();
 
+  #if CE_EMC
+  updateCeEmc();
+  #else
   // active only power on
   updatePSI();
   updateMotor();
-  Melody_Proc();
-
   // active when it need
   updateEEPROM();
-
   updateBLE();
+  #endif
 
+  Melody_Proc();
 
   if ( analogRead(READ_USB_CON) > 1000)
   {
@@ -546,6 +549,74 @@ void Key_Proc(void)
     default : break;
   }
 }
+
+#if CE_EMC
+void updateCeEmc (void)
+{
+  static uint32_t work_time = 0;
+  static uint8_t  work_step = 0;
+  static uint8_t  stop_fleg = 0;
+
+  if( active_step == STEP_MAKE_PSI) // do work
+  {
+    stop_fleg = 1;
+
+    if( millis() - work_time > 1000)
+    {
+      work_time = millis();
+
+      digitalWrite(MOTOR_PORT_F, LOW);
+      digitalWrite(MOTOR_PORT_R, LOW);
+
+      digitalWrite(SOLENOID_PORT, LOW);
+      digitalWrite(AIRPUMP_PORT, LOW);
+    
+      digitalWrite(PELTIER_FAN, LOW);
+      digitalWrite(PELTIER_PORT, LOW);
+
+      switch(work_step)
+      {
+        case 0 :
+          digitalWrite(MOTOR_PORT_F, HIGH);
+          digitalWrite(MOTOR_PORT_R, LOW);
+          break;
+
+        case 1 :
+          digitalWrite(MOTOR_PORT_F, LOW);
+          digitalWrite(MOTOR_PORT_R, HIGH);
+          break;
+
+        case 2 :
+          digitalWrite(AIRPUMP_PORT, HIGH);
+          break;
+
+        case 3 :
+          digitalWrite(PELTIER_FAN, HIGH);
+          break;
+      }
+
+      work_step += 1;
+      if( work_step > 3) work_step = 0;      
+    }
+  }
+  else
+  {
+    if( stop_fleg == 1)
+    {
+      stop_fleg = 0;
+
+      digitalWrite(MOTOR_PORT_F, LOW);
+      digitalWrite(MOTOR_PORT_R, LOW);
+
+      digitalWrite(SOLENOID_PORT, LOW);
+      digitalWrite(AIRPUMP_PORT, LOW);
+    
+      digitalWrite(PELTIER_FAN, LOW);
+      digitalWrite(PELTIER_PORT, LOW);
+    }
+  }
+}
+#endif
 
 /*
    temperature control function
