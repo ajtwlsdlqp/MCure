@@ -478,6 +478,25 @@ void Key_Proc(void)
 
           active_step = STEP_EMERGENCY_STOP;
         }
+        
+        #if CE_EMC
+          // when CE_EMC Mode Always off directly
+          f_power_state = 0;
+          active_step = STEP_USER_OFF;
+          
+          next_sleep_ent_time = millis();
+    
+          digitalWrite(MOTOR_PORT_F, LOW);
+          digitalWrite(MOTOR_PORT_R, LOW);
+    
+          digitalWrite(SOLENOID_PORT, LOW);
+          digitalWrite(AIRPUMP_PORT, LOW);
+        
+          digitalWrite(PELTIER_FAN, LOW);
+          digitalWrite(PELTIER_PORT, LOW);
+
+          digitalWrite(MOTOR_SLEEP, LOW); // when power off -> enable sleep motor
+        #endif
       }
       break;
 
